@@ -1,0 +1,6 @@
+fastapi>=0.95.1
+uvicorn>=0.22.0
+SQLAlchemy>=2.0.13
+requests>=2.30.0
+cachetools>=5.3.0
+cacheout>=0.14.1
