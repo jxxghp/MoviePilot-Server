@@ -78,7 +78,7 @@ async def plugin_statistic(db: Session = Depends(get_db)):
     查询插件安装统计
     """
     if not StatisticCache.get('plugin'):
-        statistics = PluginStatistics.statistic(db)
+        statistics = PluginStatistics.list(db)
         StatisticCache.set('plugin', {
             sta.plugin_id: sta.count for sta in statistics
         })
