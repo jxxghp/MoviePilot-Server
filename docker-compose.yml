@@ -1,0 +1,66 @@
+version: '3.3'
+
+services:
+
+    moviepilot-server:
+        image: 'jxxghp/moviepilot-server:latest'
+        container_name: moviepilot-server
+        ports:
+            - target: 3001
+              published: 3001
+              protocol: tcp
+        volumes:
+            - '/root/moviepilot:/config'
+        logging:
+            driver: "json-file"
+            options:
+                max-size: "5m"
+        restart: always
+
+    cookiecloud:
+        image: 'easychen/cookiecloud:latest'
+        container_name: cookiecloud
+        environment:
+            - 'API_ROOT=/cookiecloud'
+        ports:
+            - target: 8088
+              published: 8088
+              protocol: tcp
+        volumes:
+            - '/root/cookiecloud:/data/api/data'
+        restart: always
+        logging:
+            driver: "json-file"
+            options:
+                max-size: "5m"
+
+    etherpad:
+        image: 'etherpad/etherpad:latest'
+        container_name: etherpad
+        ports:
+            - target: 9001
+              published: 9009
+              protocol: tcp
+        volumes:
+            - '/root/etherpad:/opt/etherpad-lite/var'
+        environment:
+            - 'ADMIN_PASSWORD='
+        restart: always
+        logging:
+            driver: "json-file"
+            options:
+                max-size: "5m"
+
+    ocr:
+        image: 'jxxghp/moviepilot-ocr:latest'
+        container_name: ocr
+        ports:
+            - target: 9899
+              published: 9899
+              protocol: tcp
+        restart: always
+        logging:
+            driver: "json-file"
+            options:
+                max-size: "5m"
+
