@@ -1,8 +1,10 @@
 import os
+from typing import List
 
 import uvicorn
 from cacheout import Cache
 from fastapi import FastAPI, Depends
+from pydantic import BaseModel
 from sqlalchemy import create_engine, QueuePool
 from sqlalchemy.orm import sessionmaker
 
@@ -29,6 +31,15 @@ Base.metadata.create_all(bind=Engine)
 
 # 统计缓存
 StatisticCache = Cache(maxsize=100, ttl=1800)
+
+
+# 数据模型
+class PluginStatistic(BaseModel):
+    plugin_id: str
+
+
+class PluginStatisticList(BaseModel):
+    plugins: List[PluginStatistic]
 
 
 def get_db():
@@ -66,6 +77,19 @@ async def plugin_install(pid: str, db: Session = Depends(get_db)):
     # 如果存在则更新
     else:
         plugin.update(db, {"count": plugin.count + 1})
+
+    return {
+        "message": "success"
+    }
+
+
+@App.post("/plugin/install")
+async def plugin_batch_install(plugins: PluginStatisticList, db: Session = Depends(get_db)):
+    """
+    安装插件计数
+    """
+    for plugin in plugins.plugins:
+        await plugin_install(plugin.plugin_id, db)
 
     return {
         "message": "success"
