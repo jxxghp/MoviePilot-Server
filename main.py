@@ -108,7 +108,7 @@ def plugin_batch_install(plugins: PluginStatisticList, db: Session = Depends(get
     安装插件计数
     """
     for plugin in plugins.plugins:
-        await plugin_install(plugin.plugin_id, db)
+        plugin_install(plugin.plugin_id, db)
 
     return {
         "message": "success"
@@ -154,7 +154,7 @@ def subscribe_report(subscribes: SubscribeStatisticList, db: Session = Depends(g
     批量添加订阅统计
     """
     for subscribe in subscribes.subscribes:
-        await subscribe_add(subscribe, db)
+        subscribe_add(subscribe, db)
 
     return {
         "message": "success"
