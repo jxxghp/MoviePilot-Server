@@ -148,6 +148,19 @@ async def subscribe_add(subscribe: SubscribeStatistic, db: Session = Depends(get
     }
 
 
+@App.post("/subscribe/report")
+async def subscribe_report(subscribes: SubscribeStatisticList, db: Session = Depends(get_db)):
+    """
+    批量添加订阅统计
+    """
+    for subscribe in subscribes.subscribes:
+        await subscribe_add(subscribe, db)
+
+    return {
+        "message": "success"
+    }
+
+
 @App.get("/subscribe/statistic")
 async def subscribe_statistic(stype: str, page: int = 1, count: int = 30,
                               db: Session = Depends(get_db)):
