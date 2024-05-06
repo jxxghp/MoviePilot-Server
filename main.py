@@ -76,14 +76,14 @@ def get_db():
 
 
 @App.get("/")
-async def root():
+def root():
     return {
         "message": "MoviePilot Server is running ..."
     }
 
 
 @App.get("/plugin/install/{pid}")
-async def plugin_install(pid: str, db: Session = Depends(get_db)):
+def plugin_install(pid: str, db: Session = Depends(get_db)):
     """
     安装插件计数
     """
@@ -103,7 +103,7 @@ async def plugin_install(pid: str, db: Session = Depends(get_db)):
 
 
 @App.post("/plugin/install")
-async def plugin_batch_install(plugins: PluginStatisticList, db: Session = Depends(get_db)):
+def plugin_batch_install(plugins: PluginStatisticList, db: Session = Depends(get_db)):
     """
     安装插件计数
     """
@@ -116,7 +116,7 @@ async def plugin_batch_install(plugins: PluginStatisticList, db: Session = Depen
 
 
 @App.get("/plugin/statistic")
-async def plugin_statistic(db: Session = Depends(get_db)):
+def plugin_statistic(db: Session = Depends(get_db)):
     """
     查询插件安装统计
     """
@@ -129,7 +129,7 @@ async def plugin_statistic(db: Session = Depends(get_db)):
 
 
 @App.post("/subscribe/add")
-async def subscribe_add(subscribe: SubscribeStatistic, db: Session = Depends(get_db)):
+def subscribe_add(subscribe: SubscribeStatistic, db: Session = Depends(get_db)):
     """
     添加订阅统计
     """
@@ -149,7 +149,7 @@ async def subscribe_add(subscribe: SubscribeStatistic, db: Session = Depends(get
 
 
 @App.post("/subscribe/report")
-async def subscribe_report(subscribes: SubscribeStatisticList, db: Session = Depends(get_db)):
+def subscribe_report(subscribes: SubscribeStatisticList, db: Session = Depends(get_db)):
     """
     批量添加订阅统计
     """
@@ -162,8 +162,8 @@ async def subscribe_report(subscribes: SubscribeStatisticList, db: Session = Dep
 
 
 @App.get("/subscribe/statistic")
-async def subscribe_statistic(stype: str, page: int = 1, count: int = 30,
-                              db: Session = Depends(get_db)):
+def subscribe_statistic(stype: str, page: int = 1, count: int = 30,
+                        db: Session = Depends(get_db)):
     """
     查询订阅统计
     """
