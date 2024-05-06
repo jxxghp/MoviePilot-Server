@@ -27,7 +27,7 @@ services:
               published: 8088
               protocol: tcp
         volumes:
-            - '/root/cookiecloud:/data/api/data'
+            - '/mnt/cookiecloud:/data/api/data'
         restart: always
         logging:
             driver: "json-file"
