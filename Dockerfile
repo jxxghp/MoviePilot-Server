@@ -1,4 +1,4 @@
-FROM ubuntu:latest
+FROM ubuntu:23.10
 ENV LANG="C.UTF-8" \
     TZ="Asia/Shanghai" \
     REPO_URL="https://github.com/jxxghp/MoviePilot-Server.git" \
