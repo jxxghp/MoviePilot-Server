@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import List, Optional
 
 import uvicorn
 from cacheout import Cache
@@ -40,6 +40,25 @@ class PluginStatistic(BaseModel):
 
 class PluginStatisticList(BaseModel):
     plugins: List[PluginStatistic]
+
+
+class SubscribeStatistic(BaseModel):
+    name: str
+    year: Optional[str] = None
+    type: str
+    tmdbid: Optional[int] = None
+    imdbid: Optional[str] = None
+    tvdbid: Optional[int] = None
+    doubanid: Optional[str] = None
+    season: Optional[int] = None
+    poster: Optional[str] = None
+    backdrop: Optional[str] = None
+    vote: Optional[float] = None
+    description: Optional[str] = None
+
+
+class SubscribeStatisticList(BaseModel):
+    subscribes: List[SubscribeStatistic]
 
 
 def get_db():
@@ -107,6 +126,56 @@ async def plugin_statistic(db: Session = Depends(get_db)):
             sta.plugin_id: sta.count for sta in statistics
         })
     return StatisticCache.get('plugin')
+
+
+@App.post("/subscribe/add")
+async def subscribe_add(subscribe: SubscribeStatistic, db: Session = Depends(get_db)):
+    """
+    添加订阅统计
+    """
+    # 查询数据库中是否存在
+    sub = SubscribeStatistics.read(db, mid=subscribe.tmdbid or subscribe.doubanid, season=subscribe.season)
+    # 如果不存在则创建
+    if not sub:
+        sub = SubscribeStatistics(**subscribe.dict(), count=1)
+        sub.create(db)
+    # 如果存在则更新
+    else:
+        sub.update(db, {"count": sub.count + 1})
+
+    return {
+        "message": "success"
+    }
+
+
+@App.get("/subscribe/statistic")
+async def subscribe_statistic(stype: str, page: int = 1, count: int = 30,
+                              db: Session = Depends(get_db)):
+    """
+    查询订阅统计
+    """
+    cache_key = f"subscribe_{stype}_{page}_{count}"
+    if not StatisticCache.get(cache_key):
+        statistics = list(db, stype=stype, page=page, count=count)
+        StatisticCache.set(cache_key, [
+            {
+                "name": sta.name,
+                "year": sta.year,
+                "type": sta.type,
+                "tmdbid": sta.tmdbid,
+                "imdbid": sta.imdbid,
+                "tvdbid": sta.tvdbid,
+                "doubanid": sta.doubanid,
+                "bangumiid": sta.bangumiid,
+                "season": sta.season,
+                "poster": sta.poster,
+                "backdrop": sta.backdrop,
+                "vote": sta.vote,
+                "description": sta.description,
+                "count": sta.count
+            } for sta in statistics
+        ])
+    return StatisticCache.get(cache_key)
 
 
 if __name__ == '__main__':
