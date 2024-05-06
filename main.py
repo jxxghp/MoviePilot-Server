@@ -169,7 +169,7 @@ async def subscribe_statistic(stype: str, page: int = 1, count: int = 30,
     """
     cache_key = f"subscribe_{stype}_{page}_{count}"
     if not StatisticCache.get(cache_key):
-        statistics = list(db, stype=stype, page=page, count=count)
+        statistics = SubscribeStatistics.list(db, stype=stype, page=page, count=count)
         StatisticCache.set(cache_key, [
             {
                 "name": sta.name,

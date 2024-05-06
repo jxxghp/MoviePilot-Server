@@ -108,10 +108,10 @@ class SubscribeStatistics(Base):
         db.query(SubscribeStatistics).filter(or_(SubscribeStatistics.id == sid)).delete()
         db.commit()
 
-
-def list(db: Session, stype: str, page: int = 1, count: int = 30):
-    return db.query(SubscribeStatistics).filter(
-        or_(SubscribeStatistics.type == stype)
-    ).order_by(
-        SubscribeStatistics.count.desc()
-    ).offset((page - 1) * count).limit(count).all()
+    @staticmethod
+    def list(db: Session, stype: str, page: int = 1, count: int = 30):
+        return db.query(SubscribeStatistics).filter(
+            or_(SubscribeStatistics.type == stype)
+        ).order_by(
+            SubscribeStatistics.count.desc()
+        ).offset((page - 1) * count).limit(count).all()
