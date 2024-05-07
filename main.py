@@ -148,6 +148,25 @@ def subscribe_add(subscribe: SubscribeStatistic, db: Session = Depends(get_db)):
     }
 
 
+@App.post("/subscribe/done")
+def subscribe_done(subscribe: SubscribeStatistic, db: Session = Depends(get_db)):
+    """
+    完成订阅更新统计
+    """
+    # 查询数据库中是否存在
+    sub = SubscribeStatistics.read(db, mid=subscribe.tmdbid or subscribe.doubanid, season=subscribe.season)
+    # 如果存在则更新
+    if sub:
+        if sub.count <= 1:
+            sub.delete(db, sub.id)
+        else:
+            sub.update(db, {"count": sub.count - 1})
+
+    return {
+        "message": "success"
+    }
+
+
 @App.post("/subscribe/report")
 def subscribe_report(subscribes: SubscribeStatisticList, db: Session = Depends(get_db)):
     """
