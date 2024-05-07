@@ -20,9 +20,11 @@ Engine = create_engine(SQLALCHEMY_DATABASE_URL,
                        echo=False,
                        poolclass=QueuePool,
                        pool_pre_ping=True,
-                       pool_size=1000,
-                       pool_recycle=60 * 10,
-                       max_overflow=0
+                       pool_size=1024,
+                       pool_recycle=3600,
+                       pool_timeout=180,
+                       max_overflow=10,
+                       connect_args={"timeout": 60}
                        )
 # 数据库会话
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=Engine)
