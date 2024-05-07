@@ -43,9 +43,9 @@ class PluginStatisticList(BaseModel):
 
 
 class SubscribeStatistic(BaseModel):
-    name: str
+    name: Optional[str] = None
     year: Optional[str] = None
-    type: str
+    type: Optional[str] = None
     tmdbid: Optional[int] = None
     imdbid: Optional[str] = None
     tvdbid: Optional[int] = None
