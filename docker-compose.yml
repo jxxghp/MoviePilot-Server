@@ -64,3 +64,17 @@ services:
             options:
                 max-size: "5m"
 
+    wiki:
+        image: ghcr.io/requarks/wiki:2.5
+        container_name: wiki
+        environment:
+            DB_TYPE: sqlite
+            DB_FILEPATH: /config/wiki.db
+        volumes:
+            - '/root/wiki:/config'
+        restart: unless-stopped
+        ports:
+            - target: 3000
+              published: 3000
+              protocol: tcp
+
