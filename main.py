@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from typing import List, Optional
 
 import uvicorn
@@ -59,6 +60,35 @@ class SubscribeStatistic(BaseModel):
     description: Optional[str] = None
 
 
+class SubscribeShare(BaseModel):
+    id: Optional[int] = None
+    share_title: Optional[str] = None
+    share_comment: Optional[str] = None
+    share_user: Optional[str] = None
+    name: Optional[str] = None
+    year: Optional[str] = None
+    type: Optional[str] = None
+    tmdbid: Optional[int] = None
+    imdbid: Optional[str] = None
+    tvdbid: Optional[int] = None
+    doubanid: Optional[str] = None
+    season: Optional[int] = None
+    poster: Optional[str] = None
+    backdrop: Optional[str] = None
+    vote: Optional[float] = None
+    description: Optional[str] = None
+    genre_ids: Optional[str] = None
+    include: Optional[str] = None
+    exclude: Optional[str] = None
+    quality: Optional[str] = None
+    resolution: Optional[str] = None
+    effect: Optional[str] = None
+    total_episode: Optional[int] = None
+    custom_words: Optional[str] = None
+    media_category: Optional[str] = None
+    date: Optional[str] = None
+
+
 class SubscribeStatisticList(BaseModel):
     subscribes: List[SubscribeStatistic]
 
@@ -80,6 +110,7 @@ def get_db():
 @App.get("/")
 def root():
     return {
+        "code": 0,
         "message": "MoviePilot Server is running ..."
     }
 
@@ -100,6 +131,7 @@ def plugin_install(pid: str, db: Session = Depends(get_db)):
         plugin.update(db, {"count": plugin.count + 1})
 
     return {
+        "code": 0,
         "message": "success"
     }
 
@@ -113,6 +145,7 @@ def plugin_batch_install(plugins: PluginStatisticList, db: Session = Depends(get
         plugin_install(plugin.plugin_id, db)
 
     return {
+        "code": 0,
         "message": "success"
     }
 
@@ -146,6 +179,7 @@ def subscribe_add(subscribe: SubscribeStatistic, db: Session = Depends(get_db)):
         sub.update(db, {"count": sub.count + 1})
 
     return {
+        "code": 0,
         "message": "success"
     }
 
@@ -165,6 +199,7 @@ def subscribe_done(subscribe: SubscribeStatistic, db: Session = Depends(get_db))
             sub.update(db, {"count": sub.count - 1})
 
     return {
+        "code": 0,
         "message": "success"
     }
 
@@ -178,6 +213,7 @@ def subscribe_report(subscribes: SubscribeStatisticList, db: Session = Depends(g
         subscribe_add(subscribe, db)
 
     return {
+        "code": 0,
         "message": "success"
     }
 
@@ -210,6 +246,53 @@ def subscribe_statistic(stype: str, page: int = 1, count: int = 30,
             } for sta in statistics
         ])
     return StatisticCache.get(cache_key)
+
+
+@App.post("/subscribe/share")
+def subscribe_share(subscribe: SubscribeShare, db: Session = Depends(get_db)):
+    """
+    新增订阅分享
+    """
+    if not subscribe.share_title or not subscribe.share_user:
+        return {
+            "code": 1,
+            "message": "请填写分享标题和说明"
+        }
+    # 查询数据库中是否存在
+    sub = SubscribeShare.read(db, title=subscribe.share_title, user=subscribe.share_user)
+    # 如果不存在则创建
+    if not sub:
+        subscribe.date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        sub = SubscribeShare(**subscribe.dict(), count=1)
+        sub.create(db)
+    # 如果存在则报错
+    else:
+        return {
+            "code": 2,
+            "message": "您已经分享过这个标题了"
+        }
+
+    return {
+        "code": 0,
+        "message": "success"
+    }
+
+
+@App.get("/subscribe/fork/{shareid}")
+def subscribe_fork(shareid: int, db: Session = Depends(get_db)):
+    """
+    复用分享的订阅
+    """
+    # 查询数据库中是否存在
+    share = SubscribeShare.read_by_id(db, sid=shareid)
+    # 如果存在则更新
+    if share:
+        share.update(db, {"count": share.count - 1})
+
+    return {
+        "code": 0,
+        "message": "success"
+    }
 
 
 if __name__ == '__main__':

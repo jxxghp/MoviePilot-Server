@@ -115,3 +115,98 @@ class SubscribeStatistics(Base):
         ).order_by(
             SubscribeStatistics.count.desc()
         ).offset((page - 1) * count).limit(count).all()
+
+
+class SubscribeShare(Base):
+    """
+    订阅分享
+    """
+    __tablename__ = "SUBSCRIBE_SHARE"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # 分享标题
+    share_title = Column(String, index=True, nullable=False)
+    # 分享介绍
+    share_comment = Column(String)
+    # 分享人
+    share_user = Column(String)
+    # 媒体名称
+    name = Column(String, index=True, nullable=False)
+    # 年份
+    year = Column(String)
+    # 类型
+    type = Column(String)
+    # 媒体编号
+    tmdbid = Column(Integer)
+    imdbid = Column(String)
+    tvdbid = Column(Integer)
+    doubanid = Column(String)
+    bangumiid = Column(Integer)
+    # genre_ids,分隔
+    genre_ids = Column(String)
+    # 季号
+    season = Column(Integer)
+    # 海报
+    poster = Column(String)
+    # 背景图
+    backdrop = Column(String)
+    # 评分，float
+    vote = Column(Float)
+    # 简介
+    description = Column(String)
+    # 包含
+    include = Column(String)
+    # 排除
+    exclude = Column(String)
+    # 质量
+    quality = Column(String)
+    # 分辨率
+    resolution = Column(String)
+    # 特效
+    effect = Column(String)
+    # 总集数
+    total_episode = Column(Integer)
+    # 自定义识别词
+    custom_words = Column(String)
+    # 自定义媒体类别
+    media_category = Column(String)
+    # 创建时间
+    date = Column(String, index=True)
+    # 复用人次
+    count = Column(Integer)
+
+    def create(self, db: Session):
+        db.add(self)
+        db.commit()
+        db.refresh(self)
+
+    @staticmethod
+    def read(db: Session, title: str, user: str):
+        return db.query(SubscribeShare).filter(and_(SubscribeShare.share_title == title,
+                                                    SubscribeShare.share_user == user)).first()
+
+    @staticmethod
+    def read_by_id(db: Session, sid: int):
+        return db.query(SubscribeShare).filter(and_(SubscribeShare.id == sid)).first()
+
+    def update(self, db: Session, payload: dict):
+        payload = {k: v for k, v in payload.items() if v is not None}
+        for key, value in payload.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+        db.commit()
+        db.refresh(self)
+
+    @staticmethod
+    def delete(db: Session, sid: int):
+        db.query(SubscribeShare).filter(or_(SubscribeShare.id == sid)).delete()
+        db.commit()
+
+    @staticmethod
+    def list(db: Session, name: str, page: int = 1, count: int = 30):
+        return db.query(SubscribeShare).filter(
+            or_(SubscribeShare.share_title.like(f'%{name}%'),
+                SubscribeShare.name.like(f'%{name}%'), )
+        ).order_by(
+            SubscribeShare.date.desc()
+        ).offset((page - 1) * count).limit(count).all()
