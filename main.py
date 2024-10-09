@@ -40,15 +40,15 @@ ShareCache = Cache(maxsize=100, ttl=1800)
 
 
 # 数据模型
-class PluginStatistic(BaseModel):
+class PluginStatisticItem(BaseModel):
     plugin_id: str
 
 
 class PluginStatisticList(BaseModel):
-    plugins: List[PluginStatistic]
+    plugins: List[PluginStatisticItem]
 
 
-class SubscribeStatistic(BaseModel):
+class SubscribeStatisticItem(BaseModel):
     name: Optional[str] = None
     year: Optional[str] = None
     type: Optional[str] = None
@@ -63,7 +63,7 @@ class SubscribeStatistic(BaseModel):
     description: Optional[str] = None
 
 
-class SubscribeShare(BaseModel):
+class SubscribeShareItem(BaseModel):
     id: Optional[int] = None
     share_title: Optional[str] = None
     share_comment: Optional[str] = None
@@ -93,7 +93,7 @@ class SubscribeShare(BaseModel):
 
 
 class SubscribeStatisticList(BaseModel):
-    subscribes: List[SubscribeStatistic]
+    subscribes: List[SubscribeStatisticItem]
 
 
 def get_db():
@@ -167,7 +167,7 @@ def plugin_statistic(db: Session = Depends(get_db)):
 
 
 @App.post("/subscribe/add")
-def subscribe_add(subscribe: SubscribeStatistic, db: Session = Depends(get_db)):
+def subscribe_add(subscribe: SubscribeStatisticItem, db: Session = Depends(get_db)):
     """
     添加订阅统计
     """
@@ -188,7 +188,7 @@ def subscribe_add(subscribe: SubscribeStatistic, db: Session = Depends(get_db)):
 
 
 @App.post("/subscribe/done")
-def subscribe_done(subscribe: SubscribeStatistic, db: Session = Depends(get_db)):
+def subscribe_done(subscribe: SubscribeStatisticItem, db: Session = Depends(get_db)):
     """
     完成订阅更新统计
     """
@@ -237,7 +237,7 @@ def subscribe_statistic(stype: str, page: int = 1, count: int = 30,
 
 
 @App.post("/subscribe/share")
-def subscribe_share(subscribe: SubscribeShare, db: Session = Depends(get_db)):
+def subscribe_share(subscribe: SubscribeShareItem, db: Session = Depends(get_db)):
     """
     新增订阅分享
     """
