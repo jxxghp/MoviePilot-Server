@@ -41,6 +41,9 @@ class PluginStatistics(Base):
     def list(db: Session):
         return db.query(PluginStatistics.plugin_id, PluginStatistics.count).all()
 
+    def dict(self):
+        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}
+
 
 class SubscribeStatistics(Base):
     """
@@ -115,6 +118,9 @@ class SubscribeStatistics(Base):
         ).order_by(
             SubscribeStatistics.count.desc()
         ).offset((page - 1) * count).limit(count).all()
+
+    def dict(self):
+        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}
 
 
 class SubscribeShare(Base):
@@ -215,3 +221,6 @@ class SubscribeShare(Base):
             return db.query(SubscribeShare).order_by(
                 SubscribeShare.date.desc()
             ).offset((page - 1) * count).limit(count).all()
+
+    def dict(self):
+        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}
