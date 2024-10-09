@@ -35,6 +35,9 @@ Base.metadata.create_all(bind=Engine)
 # 统计缓存
 StatisticCache = Cache(maxsize=100, ttl=1800)
 
+# 订阅分享缓存
+ShareCache = Cache(maxsize=100, ttl=1800)
+
 
 # 数据模型
 class PluginStatistic(BaseModel):
@@ -228,22 +231,7 @@ def subscribe_statistic(stype: str, page: int = 1, count: int = 30,
     if not StatisticCache.get(cache_key):
         statistics = SubscribeStatistics.list(db, stype=stype, page=page, count=count)
         StatisticCache.set(cache_key, [
-            {
-                "name": sta.name,
-                "year": sta.year,
-                "type": sta.type,
-                "tmdbid": sta.tmdbid,
-                "imdbid": sta.imdbid,
-                "tvdbid": sta.tvdbid,
-                "doubanid": sta.doubanid,
-                "bangumiid": sta.bangumiid,
-                "season": sta.season,
-                "poster": sta.poster,
-                "backdrop": sta.backdrop,
-                "vote": sta.vote,
-                "description": sta.description,
-                "count": sta.count
-            } for sta in statistics
+            sta.dict() for sta in statistics
         ])
     return StatisticCache.get(cache_key)
 
@@ -276,6 +264,22 @@ def subscribe_share(subscribe: SubscribeShare, db: Session = Depends(get_db)):
         "code": 0,
         "message": "success"
     }
+
+
+@App.get("/subscribe/shares")
+def subscribe_shares(name: str = None, page: int = 1, count: int = 30,
+                     db: Session = Depends(get_db)):
+    """
+    查询分享的订阅
+    """
+    # 查询数据库中是否存在
+    cache_key = f"subscribe_{name}_{page}_{count}"
+    if not ShareCache.get(cache_key):
+        shares = SubscribeShare.list(db, name=name, page=page, count=count)
+        ShareCache.set(cache_key, [
+            sha.dict() for sha in shares
+        ])
+    return ShareCache.get(cache_key)
 
 
 @App.get("/subscribe/fork/{shareid}")
