@@ -204,9 +204,14 @@ class SubscribeShare(Base):
 
     @staticmethod
     def list(db: Session, name: str, page: int = 1, count: int = 30):
-        return db.query(SubscribeShare).filter(
-            or_(SubscribeShare.share_title.like(f'%{name}%'),
-                SubscribeShare.name.like(f'%{name}%'), )
-        ).order_by(
-            SubscribeShare.date.desc()
-        ).offset((page - 1) * count).limit(count).all()
+        if name:
+            return db.query(SubscribeShare).filter(
+                or_(SubscribeShare.share_title.like(f'%{name}%'),
+                    SubscribeShare.name.like(f'%{name}%'), )
+            ).order_by(
+                SubscribeShare.date.desc()
+            ).offset((page - 1) * count).limit(count).all()
+        else:
+            return db.query(SubscribeShare).order_by(
+                SubscribeShare.date.desc()
+            ).offset((page - 1) * count).limit(count).all()
