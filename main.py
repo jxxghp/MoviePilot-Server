@@ -294,7 +294,7 @@ def subscribe_fork(shareid: int, db: Session = Depends(get_db)):
     share = SubscribeShare.read_by_id(db, sid=shareid)
     # 如果存在则更新
     if share:
-        share.update(db, {"count": share.count - 1})
+        share.update(db, {"count": share.count + 1})
 
     return {
         "code": 0,
