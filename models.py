@@ -42,7 +42,7 @@ class PluginStatistics(Base):
         return db.query(PluginStatistics.plugin_id, PluginStatistics.count).all()
 
     def dict(self):
-        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}
+        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns} # noqa
 
 
 class SubscribeStatistics(Base):
@@ -120,7 +120,7 @@ class SubscribeStatistics(Base):
         ).offset((page - 1) * count).limit(count).all()
 
     def dict(self):
-        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}
+        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns} # noqa
 
 
 class SubscribeShare(Base):
@@ -172,6 +172,8 @@ class SubscribeShare(Base):
     effect = Column(String)
     # 总集数
     total_episode = Column(Integer)
+    # 搜索词
+    keyword = Column(String)
     # 自定义识别词
     custom_words = Column(String)
     # 自定义媒体类别
@@ -223,4 +225,4 @@ class SubscribeShare(Base):
             ).offset((page - 1) * count).limit(count).all()
 
     def dict(self):
-        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}
+        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns} # noqa

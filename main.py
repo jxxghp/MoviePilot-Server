@@ -257,7 +257,7 @@ def subscribe_share(subscribe: SubscribeShareItem, db: Session = Depends(get_db)
     else:
         return {
             "code": 2,
-            "message": "您已经分享过这个标题了"
+            "message": "您已经分享过这个订阅了"
         }
 
     # 清除缓存
