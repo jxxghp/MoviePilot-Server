@@ -5,7 +5,7 @@ from typing import List, Optional
 import uvicorn
 from cacheout import Cache
 from fastapi import FastAPI, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel # noqa
 from sqlalchemy import create_engine, QueuePool
 from sqlalchemy.orm import sessionmaker
 
@@ -175,7 +175,7 @@ def subscribe_add(subscribe: SubscribeStatisticItem, db: Session = Depends(get_d
     sub = SubscribeStatistics.read(db, mid=subscribe.tmdbid or subscribe.doubanid, season=subscribe.season)
     # 如果不存在则创建
     if not sub:
-        sub = SubscribeStatistics(**subscribe.dict(), count=1)
+        sub = SubscribeStatistics(**subscribe.dict(), count=1) # noqa
         sub.create(db)
     # 如果存在则更新
     else:
@@ -251,13 +251,13 @@ def subscribe_share(subscribe: SubscribeShareItem, db: Session = Depends(get_db)
     # 如果不存在则创建
     if not sub:
         subscribe.date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        sub = SubscribeShare(**subscribe.dict(), count=1)
+        sub = SubscribeShare(**subscribe.dict(), count=1) # noqa
         sub.create(db)
     # 如果存在则报错
     else:
         return {
             "code": 2,
-            "message": "您已经分享过这个订阅了"
+            "message": "您使用的昵称已经分享过这个订阅了"
         }
 
     # 清除缓存
@@ -266,6 +266,29 @@ def subscribe_share(subscribe: SubscribeShareItem, db: Session = Depends(get_db)
     return {
         "code": 0,
         "message": "success"
+    }
+
+
+@App.delete("/subscribe/share/{sid}")
+def subscribe_share_delete(sid: int, share_uid: str, db: Session = Depends(get_db)):
+    """
+    删除订阅分享
+    """
+    # 查询数据库中是否存在
+    sub = SubscribeShare.read_by_id(db, sid)
+
+    # 如果存在则删除
+    if sub and sub.share_uid == share_uid:
+        sub.delete(db, sid)
+        # 清除缓存
+        ShareCache.clear()
+        return {
+            "code": 0,
+            "message": "success"
+        }
+    return {
+        "code": 1,
+        "message": "分享不存在或无权限"
     }
 
 

@@ -136,6 +136,8 @@ class SubscribeShare(Base):
     share_comment = Column(String)
     # 分享人
     share_user = Column(String)
+    # 分享人唯一ID
+    share_uid = Column(String)
     # 媒体名称
     name = Column(String, index=True, nullable=False)
     # 年份
