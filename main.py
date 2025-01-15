@@ -68,6 +68,7 @@ class SubscribeShareItem(BaseModel):
     share_title: Optional[str] = None
     share_comment: Optional[str] = None
     share_user: Optional[str] = None
+    share_uid: Optional[str] = None
     name: Optional[str] = None
     year: Optional[str] = None
     type: Optional[str] = None
