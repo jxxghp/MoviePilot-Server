@@ -279,7 +279,7 @@ def subscribe_share_delete(sid: int, share_uid: str, db: Session = Depends(get_d
     sub = SubscribeShare.read_by_id(db, sid)
 
     # 如果存在则删除
-    if sub and sub.share_uid == share_uid:
+    if sub and share_uid:
         sub.delete(db, sid)
         # 清除缓存
         ShareCache.clear()
