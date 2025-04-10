@@ -72,6 +72,7 @@ class SubscribeShareItem(BaseModel):
     name: Optional[str] = None
     year: Optional[str] = None
     type: Optional[str] = None
+    keyword: Optional[str] = None
     tmdbid: Optional[int] = None
     imdbid: Optional[str] = None
     tvdbid: Optional[int] = None
@@ -90,6 +91,7 @@ class SubscribeShareItem(BaseModel):
     total_episode: Optional[int] = None
     custom_words: Optional[str] = None
     media_category: Optional[str] = None
+    episode_group: Optional[str] = None
     date: Optional[str] = None
 
 

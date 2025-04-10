@@ -140,6 +140,8 @@ class SubscribeShare(Base):
     share_uid = Column(String)
     # 媒体名称
     name = Column(String, index=True, nullable=False)
+    # 搜索关键词
+    keyword = Column(String)
     # 年份
     year = Column(String)
     # 类型
@@ -174,12 +176,12 @@ class SubscribeShare(Base):
     effect = Column(String)
     # 总集数
     total_episode = Column(Integer)
-    # 搜索词
-    keyword = Column(String)
     # 自定义识别词
     custom_words = Column(String)
     # 自定义媒体类别
     media_category = Column(String)
+    # 自定义剧集组
+    episode_group = Column(String)
     # 创建时间
     date = Column(String, index=True)
     # 复用人次
