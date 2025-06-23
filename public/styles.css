@@ -37,9 +37,15 @@ header {
     padding: 60px 0 40px;
     background: var(--gradient-bg);
     color: var(--light-text);
-    border-radius: 0 0 20px 20px;
     margin-bottom: 40px;
     box-shadow: var(--card-shadow);
+    width: 100%;
+}
+
+.header-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
 }
 
 .logo-container {
@@ -84,7 +90,9 @@ header h1 {
 .buttons {
     display: flex;
     justify-content: center;
+    align-items: center;
     gap: 15px;
+    text-align: center;
 }
 
 .btn {
@@ -96,6 +104,7 @@ header h1 {
     font-weight: 600;
     transition: all 0.3s ease;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    max-width: 10rem;
 }
 
 .btn i {
@@ -662,7 +671,6 @@ footer {
     }
     
     .btn {
-        width: 100%;
         justify-content: center;
         padding: 10px 15px;
         font-size: 0.9rem;
