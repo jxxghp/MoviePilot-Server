@@ -230,3 +230,80 @@ class SubscribeShare(Base):
 
     def dict(self):
         return {c.name: getattr(self, c.name, None) for c in self.__table__.columns} # noqa
+
+
+class WorkflowShare(Base):
+    """
+    工作流分享
+    """
+    __tablename__ = "WORKFLOW_SHARE"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # 分享标题
+    share_title = Column(String, index=True, nullable=False)
+    # 分享介绍
+    share_comment = Column(String)
+    # 分享人
+    share_user = Column(String)
+    # 分享人唯一ID
+    share_uid = Column(String)
+    # 工作流名称
+    name = Column(String, index=True, nullable=False)
+    # 工作流描述
+    description = Column(String)
+    # 定时器
+    timer = Column(String)
+    # 任务列表
+    actions = Column(String)  # JSON字符串
+    # 任务流
+    flows = Column(String)  # JSON字符串
+    # 执行上下文
+    context = Column(String)  # JSON字符串
+    # 创建时间
+    date = Column(String, index=True)
+    # 复用人次
+    count = Column(Integer, default=0)
+
+    def create(self, db: Session):
+        db.add(self)
+        db.commit()
+        db.refresh(self)
+
+    @staticmethod
+    def read(db: Session, title: str, user: str):
+        return db.query(WorkflowShare).filter(and_(WorkflowShare.share_title == title,
+                                                   WorkflowShare.share_user == user)).first()
+
+    @staticmethod
+    def read_by_id(db: Session, sid: int):
+        return db.query(WorkflowShare).filter(and_(WorkflowShare.id == sid)).first()
+
+    def update(self, db: Session, payload: dict):
+        payload = {k: v for k, v in payload.items() if v is not None}
+        for key, value in payload.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+        db.commit()
+        db.refresh(self)
+
+    @staticmethod
+    def delete(db: Session, sid: int):
+        db.query(WorkflowShare).filter(or_(WorkflowShare.id == sid)).delete()
+        db.commit()
+
+    @staticmethod
+    def list(db: Session, name: str, page: int = 1, count: int = 30):
+        if name:
+            return db.query(WorkflowShare).filter(
+                or_(WorkflowShare.share_title.like(f'%{name}%'),
+                    WorkflowShare.name.like(f'%{name}%'), )
+            ).order_by(
+                WorkflowShare.date.desc()
+            ).offset((page - 1) * count).limit(count).all()
+        else:
+            return db.query(WorkflowShare).order_by(
+                WorkflowShare.date.desc()
+            ).offset((page - 1) * count).limit(count).all()
+
+    def dict(self):
+        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns} # noqa

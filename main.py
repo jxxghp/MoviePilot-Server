@@ -38,6 +38,9 @@ StatisticCache = Cache(maxsize=100, ttl=1800)
 # 订阅分享缓存
 ShareCache = Cache(maxsize=100, ttl=1800)
 
+# 工作流分享缓存
+WorkflowShareCache = Cache(maxsize=100, ttl=1800)
+
 
 # 数据模型
 class PluginStatisticItem(BaseModel):
@@ -92,6 +95,21 @@ class SubscribeShareItem(BaseModel):
     custom_words: Optional[str] = None
     media_category: Optional[str] = None
     episode_group: Optional[str] = None
+    date: Optional[str] = None
+
+
+class WorkflowShareItem(BaseModel):
+    id: Optional[int] = None
+    share_title: Optional[str] = None
+    share_comment: Optional[str] = None
+    share_user: Optional[str] = None
+    share_uid: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    timer: Optional[str] = None
+    actions: Optional[str] = None  # JSON字符串
+    flows: Optional[str] = None  # JSON字符串
+    context: Optional[str] = None  # JSON字符串
     date: Optional[str] = None
 
 
@@ -318,6 +336,97 @@ def subscribe_fork(shareid: int, db: Session = Depends(get_db)):
     """
     # 查询数据库中是否存在
     share = SubscribeShare.read_by_id(db, sid=shareid)
+    # 如果存在则更新
+    if share:
+        share.update(db, {"count": share.count + 1})
+
+    return {
+        "code": 0,
+        "message": "success"
+    }
+
+
+# 工作流分享相关接口
+
+@App.post("/workflow/share")
+def workflow_share(workflow: WorkflowShareItem, db: Session = Depends(get_db)):
+    """
+    新增工作流分享
+    """
+    if not workflow.share_title or not workflow.share_user:
+        return {
+            "code": 1,
+            "message": "请填写分享标题和分享人"
+        }
+    # 查询数据库中是否存在
+    share = WorkflowShare.read(db, title=workflow.share_title, user=workflow.share_user)
+    # 如果不存在则创建
+    if not share:
+        workflow.date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        share = WorkflowShare(**workflow.dict(), count=0) # noqa
+        share.create(db)
+    # 如果存在则报错
+    else:
+        return {
+            "code": 2,
+            "message": "您使用的昵称已经分享过这个工作流了"
+        }
+
+    # 清除缓存
+    WorkflowShareCache.clear()
+
+    return {
+        "code": 0,
+        "message": "success"
+    }
+
+
+@App.delete("/workflow/share/{sid}")
+def workflow_share_delete(sid: int, share_uid: str, db: Session = Depends(get_db)):
+    """
+    删除工作流分享
+    """
+    # 查询数据库中是否存在
+    share = WorkflowShare.read_by_id(db, sid)
+
+    # 如果存在则删除
+    if share and share_uid:
+        share.delete(db, sid)
+        # 清除缓存
+        WorkflowShareCache.clear()
+        return {
+            "code": 0,
+            "message": "success"
+        }
+    return {
+        "code": 1,
+        "message": "分享不存在或无权限"
+    }
+
+
+@App.get("/workflow/shares")
+def workflow_shares(name: str = None, page: int = 1, count: int = 30,
+                    db: Session = Depends(get_db)):
+    """
+    查询分享的工作流
+    """
+    # 查询数据库中是否存在
+    cache_key = f"workflow_{name}_{page}_{count}"
+    if not WorkflowShareCache.get(cache_key):
+        shares = WorkflowShare.list(db, name=name, page=page, count=count)
+        WorkflowShareCache.set(cache_key, [
+            sha.dict() for sha in shares
+        ])
+    return WorkflowShareCache.get(cache_key)
+
+
+@App.get("/workflow/fork/{shareid}")
+def workflow_fork(shareid: int, db: Session = Depends(get_db)):
+    """
+    复用分享的工作流
+    """
+    # 查询数据库中是否存在
+    share = WorkflowShare.read_by_id(db, sid=shareid)
     # 如果存在则更新
     if share:
         share.update(db, {"count": share.count + 1})
