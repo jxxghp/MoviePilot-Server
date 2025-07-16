@@ -5,7 +5,7 @@ from typing import List, Optional
 import uvicorn
 from cacheout import Cache
 from fastapi import FastAPI, Depends
-from pydantic import BaseModel # noqa
+from pydantic import BaseModel  # noqa
 from sqlalchemy import create_engine, QueuePool
 from sqlalchemy.orm import sessionmaker
 
@@ -202,7 +202,7 @@ def subscribe_add(subscribe: SubscribeStatisticItem, db: Session = Depends(get_d
     sub = SubscribeStatistics.read(db, mid=subscribe.tmdbid or subscribe.doubanid, season=subscribe.season)
     # 如果不存在则创建
     if not sub:
-        sub = SubscribeStatistics(**subscribe.dict(), count=1) # noqa
+        sub = SubscribeStatistics(**subscribe.dict(), count=1)  # noqa
         sub.create(db)
     # 如果存在则更新
     else:
@@ -278,7 +278,7 @@ def subscribe_share(subscribe: SubscribeShareItem, db: Session = Depends(get_db)
     # 如果不存在则创建
     if not sub:
         subscribe.date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        sub = SubscribeShare(**subscribe.dict(), count=1) # noqa
+        sub = SubscribeShare(**subscribe.dict(), count=1)  # noqa
         sub.create(db)
     # 如果存在则报错
     else:
@@ -294,6 +294,25 @@ def subscribe_share(subscribe: SubscribeShareItem, db: Session = Depends(get_db)
         "code": 0,
         "message": "success"
     }
+
+
+@App.get("/subscribe/share/statistics")
+def subscribe_share_statistics(db: Session = Depends(get_db)):
+    """
+    查询订阅分享统计
+    返回每个分享人分享的媒体数量以及总的复用人次
+    """
+    cache_key = "subscribe_share_statistics"
+    if not ShareCache.get(cache_key):
+        statistics = SubscribeShare.share_statistics(db)
+        ShareCache.set(cache_key, [
+            {
+                "share_user": stat.share_user,
+                "share_count": stat.share_count,
+                "total_reuse_count": stat.total_reuse_count or 0
+            } for stat in statistics
+        ])
+    return ShareCache.get(cache_key)
 
 
 @App.delete("/subscribe/share/{sid}")
@@ -352,27 +371,7 @@ def subscribe_fork(shareid: int, db: Session = Depends(get_db)):
     }
 
 
-@App.get("/subscribe/share/statistics")
-def subscribe_share_statistics(db: Session = Depends(get_db)):
-    """
-    查询订阅分享统计
-    返回每个分享人分享的媒体数量以及总的复用人次
-    """
-    cache_key = "subscribe_share_statistics"
-    if not ShareCache.get(cache_key):
-        statistics = SubscribeShare.share_statistics(db)
-        ShareCache.set(cache_key, [
-            {
-                "share_user": stat.share_user,
-                "share_count": stat.share_count,
-                "total_reuse_count": stat.total_reuse_count or 0
-            } for stat in statistics
-        ])
-    return ShareCache.get(cache_key)
-
-
 # 工作流分享相关接口
-
 @App.post("/workflow/share")
 def workflow_share(workflow: WorkflowShareItem, db: Session = Depends(get_db)):
     """
@@ -388,7 +387,7 @@ def workflow_share(workflow: WorkflowShareItem, db: Session = Depends(get_db)):
     # 如果不存在则创建
     if not share:
         workflow.date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        share = WorkflowShare(**workflow.dict(), count=0) # noqa
+        share = WorkflowShare(**workflow.dict(), count=0)  # noqa
         share.create(db)
     # 如果存在则报错
     else:
