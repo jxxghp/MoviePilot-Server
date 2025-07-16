@@ -1,6 +1,6 @@
 from typing import Union
 
-from sqlalchemy import Column, Integer, String, Float, or_, and_
+from sqlalchemy import Column, Integer, String, Float, or_, and_, func
 from sqlalchemy.orm import Session, declarative_base
 
 Base = declarative_base()
@@ -227,6 +227,19 @@ class SubscribeShare(Base):
             return db.query(SubscribeShare).order_by(
                 SubscribeShare.date.desc()
             ).offset((page - 1) * count).limit(count).all()
+
+    @staticmethod
+    def share_statistics(db: Session):
+        """
+        统计每个分享人分享的媒体数量以及总的复用人次
+        """
+        return db.query(
+            SubscribeShare.share_user,
+            func.count(SubscribeShare.id).label('share_count'),
+            func.sum(SubscribeShare.count).label('total_reuse_count')
+        ).group_by(SubscribeShare.share_user).order_by(
+            func.count(SubscribeShare.id).desc()
+        ).all()
 
     def dict(self):
         return {c.name: getattr(self, c.name, None) for c in self.__table__.columns} # noqa

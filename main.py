@@ -117,6 +117,12 @@ class SubscribeStatisticList(BaseModel):
     subscribes: List[SubscribeStatisticItem]
 
 
+class SubscribeShareStatisticItem(BaseModel):
+    share_user: str
+    share_count: int
+    total_reuse_count: int
+
+
 def get_db():
     """
     获取数据库会话
@@ -344,6 +350,25 @@ def subscribe_fork(shareid: int, db: Session = Depends(get_db)):
         "code": 0,
         "message": "success"
     }
+
+
+@App.get("/subscribe/share/statistics")
+def subscribe_share_statistics(db: Session = Depends(get_db)):
+    """
+    查询订阅分享统计
+    返回每个分享人分享的媒体数量以及总的复用人次
+    """
+    cache_key = "subscribe_share_statistics"
+    if not ShareCache.get(cache_key):
+        statistics = SubscribeShare.share_statistics(db)
+        ShareCache.set(cache_key, [
+            {
+                "share_user": stat.share_user,
+                "share_count": stat.share_count,
+                "total_reuse_count": stat.total_reuse_count or 0
+            } for stat in statistics
+        ])
+    return ShareCache.get(cache_key)
 
 
 # 工作流分享相关接口
