@@ -11,10 +11,6 @@ services:
               protocol: tcp
         volumes:
             - '/root/moviepilot:/config'
-        logging:
-            driver: "json-file"
-            options:
-                max-size: "5m"
         restart: always
 
     cookiecloud:
@@ -29,10 +25,6 @@ services:
         volumes:
             - '/mnt/cookiecloud:/data/api/data'
         restart: always
-        logging:
-            driver: "json-file"
-            options:
-                max-size: "5m"
 
     etherpad:
         image: 'etherpad/etherpad:latest'
@@ -46,10 +38,6 @@ services:
         environment:
             - 'ADMIN_PASSWORD='
         restart: always
-        logging:
-            driver: "json-file"
-            options:
-                max-size: "5m"
 
     ocr:
         image: 'jxxghp/moviepilot-ocr:latest'
@@ -59,22 +47,32 @@ services:
               published: 9899
               protocol: tcp
         restart: always
-        logging:
-            driver: "json-file"
-            options:
-                max-size: "5m"
 
     wiki:
-        image: ghcr.io/requarks/wiki:2.5
+        image: 'ghcr.io/requarks/wiki:2.5'
         container_name: wiki
         environment:
             DB_TYPE: sqlite
             DB_FILEPATH: /config/wiki.db
         volumes:
             - '/root/wiki:/config'
-        restart: unless-stopped
         ports:
             - target: 3000
               published: 3000
               protocol: tcp
+        restart: unless-stopped
 
+    moviepilot-miniapp:
+        image: 'jxxghp/moviepilot-miniapp:latest'
+        container_name: moviepilot-miniapp
+        environment:
+            - TELEGRAM_BOT_TOKEN='8497254084:AAHx6GqIOSMDSntYKDhwXJx8XFO4Tnamw_o'
+            - WEBAPP_URL='https://movie-pilot.org/miniapp/'
+            - API_BASE_URL='https://movie-pilot.org'
+        volumes:
+            - '/app/config:/config'
+        ports:
+            - target: 80
+              published: 8000
+              protocol: tcp
+        restart: always
