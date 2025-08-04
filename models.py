@@ -51,7 +51,7 @@ class PluginStatistics(Base):
         return result.all()
 
     def dict(self):
-        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns} # noqa
+        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}  # noqa
 
 
 class SubscribeStatistics(Base):
@@ -114,7 +114,7 @@ class SubscribeStatistics(Base):
                     )
                 )
             )
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     async def update(self, db: AsyncSession, payload: dict):
         payload = {k: v for k, v in payload.items() if v is not None}
@@ -143,7 +143,7 @@ class SubscribeStatistics(Base):
         return result.scalars().all()
 
     def dict(self):
-        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns} # noqa
+        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}  # noqa
 
 
 class SubscribeShare(Base):
@@ -225,7 +225,7 @@ class SubscribeShare(Base):
                 )
             )
         )
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     @classmethod
     async def read_by_id(cls, db: AsyncSession, sid: int):
@@ -290,7 +290,7 @@ class SubscribeShare(Base):
         return result.all()
 
     def dict(self):
-        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns} # noqa
+        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}  # noqa
 
 
 class WorkflowShare(Base):
@@ -340,7 +340,7 @@ class WorkflowShare(Base):
                 )
             )
         )
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     @classmethod
     async def read_by_id(cls, db: AsyncSession, sid: int):
@@ -389,4 +389,4 @@ class WorkflowShare(Base):
         return result.scalars().all()
 
     def dict(self):
-        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns} # noqa
+        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}  # noqa
