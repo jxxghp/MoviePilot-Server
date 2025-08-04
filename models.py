@@ -1,7 +1,8 @@
 from typing import Union
 
-from sqlalchemy import Column, Integer, String, Float, or_, and_, func
-from sqlalchemy.orm import Session, declarative_base
+from sqlalchemy import Column, Integer, String, Float, or_, and_, func, select, delete
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
@@ -16,30 +17,38 @@ class PluginStatistics(Base):
     plugin_id = Column(String, unique=True, index=True)
     count = Column(Integer)
 
-    def create(self, db: Session):
+    async def create(self, db: AsyncSession):
         db.add(self)
-        db.commit()
-        db.refresh(self)
+        await db.commit()
+        await db.refresh(self)
 
-    @staticmethod
-    def read(db: Session, pid: str):
-        return db.query(PluginStatistics).filter(or_(PluginStatistics.plugin_id == pid)).first()
+    @classmethod
+    async def read(cls, db: AsyncSession, pid: str):
+        result = await db.execute(
+            select(cls).where(cls.plugin_id == pid)
+        )
+        return result.scalar_one_or_none()
 
-    def update(self, db: Session, payload: dict):
+    async def update(self, db: AsyncSession, payload: dict):
         payload = {k: v for k, v in payload.items() if v is not None}
         for key, value in payload.items():
             setattr(self, key, value)
-        db.commit()
-        db.refresh(self)
+        await db.commit()
+        await db.refresh(self)
 
-    @staticmethod
-    def delete(db: Session, pid: int):
-        db.query(PluginStatistics).filter(or_(PluginStatistics.plugin_id == pid)).delete()
-        db.commit()
+    @classmethod
+    async def delete(cls, db: AsyncSession, pid: str):
+        await db.execute(
+            delete(cls).where(cls.plugin_id == pid)
+        )
+        await db.commit()
 
-    @staticmethod
-    def list(db: Session):
-        return db.query(PluginStatistics.plugin_id, PluginStatistics.count).all()
+    @classmethod
+    async def list(cls, db: AsyncSession):
+        result = await db.execute(
+            select(cls.plugin_id, cls.count)
+        )
+        return result.all()
 
     def dict(self):
         return {c.name: getattr(self, c.name, None) for c in self.__table__.columns} # noqa
@@ -77,47 +86,61 @@ class SubscribeStatistics(Base):
     # 订阅人次
     count = Column(Integer)
 
-    def create(self, db: Session):
+    async def create(self, db: AsyncSession):
         db.add(self)
-        db.commit()
-        db.refresh(self)
+        await db.commit()
+        await db.refresh(self)
 
-    @staticmethod
-    def read(db: Session, mid: Union[str, int], season: int):
+    @classmethod
+    async def read(cls, db: AsyncSession, mid: Union[str, int], season: int):
         if season:
-            return db.query(SubscribeStatistics).filter(
-                and_(
-                    or_(
-                        SubscribeStatistics.tmdbid == mid,
-                        SubscribeStatistics.doubanid == mid
-                    ),
-                    SubscribeStatistics.season == season
+            result = await db.execute(
+                select(cls).where(
+                    and_(
+                        or_(
+                            cls.tmdbid == mid,
+                            cls.doubanid == mid
+                        ),
+                        cls.season == season
+                    )
                 )
-            ).first()
+            )
         else:
-            return db.query(SubscribeStatistics).filter(or_(SubscribeStatistics.tmdbid == mid,
-                                                            SubscribeStatistics.doubanid == mid)).first()
+            result = await db.execute(
+                select(cls).where(
+                    or_(
+                        cls.tmdbid == mid,
+                        cls.doubanid == mid
+                    )
+                )
+            )
+        return result.scalar_one_or_none()
 
-    def update(self, db: Session, payload: dict):
+    async def update(self, db: AsyncSession, payload: dict):
         payload = {k: v for k, v in payload.items() if v is not None}
         for key, value in payload.items():
             if hasattr(self, key):
                 setattr(self, key, value)
-        db.commit()
-        db.refresh(self)
+        await db.commit()
+        await db.refresh(self)
 
-    @staticmethod
-    def delete(db: Session, sid: int):
-        db.query(SubscribeStatistics).filter(or_(SubscribeStatistics.id == sid)).delete()
-        db.commit()
+    @classmethod
+    async def delete(cls, db: AsyncSession, sid: int):
+        await db.execute(
+            delete(cls).where(cls.id == sid)
+        )
+        await db.commit()
 
-    @staticmethod
-    def list(db: Session, stype: str, page: int = 1, count: int = 30):
-        return db.query(SubscribeStatistics).filter(
-            or_(SubscribeStatistics.type == stype)
-        ).order_by(
-            SubscribeStatistics.count.desc()
-        ).offset((page - 1) * count).limit(count).all()
+    @classmethod
+    async def list(cls, db: AsyncSession, stype: str, page: int = 1, count: int = 30):
+        result = await db.execute(
+            select(cls)
+            .where(cls.type == stype)
+            .order_by(cls.count.desc())
+            .offset((page - 1) * count)
+            .limit(count)
+        )
+        return result.scalars().all()
 
     def dict(self):
         return {c.name: getattr(self, c.name, None) for c in self.__table__.columns} # noqa
@@ -187,59 +210,84 @@ class SubscribeShare(Base):
     # 复用人次
     count = Column(Integer)
 
-    def create(self, db: Session):
+    async def create(self, db: AsyncSession):
         db.add(self)
-        db.commit()
-        db.refresh(self)
+        await db.commit()
+        await db.refresh(self)
 
-    @staticmethod
-    def read(db: Session, title: str, user: str):
-        return db.query(SubscribeShare).filter(and_(SubscribeShare.share_title == title,
-                                                    SubscribeShare.share_user == user)).first()
+    @classmethod
+    async def read(cls, db: AsyncSession, title: str, user: str):
+        result = await db.execute(
+            select(cls).where(
+                and_(
+                    cls.share_title == title,
+                    cls.share_user == user
+                )
+            )
+        )
+        return result.scalar_one_or_none()
 
-    @staticmethod
-    def read_by_id(db: Session, sid: int):
-        return db.query(SubscribeShare).filter(and_(SubscribeShare.id == sid)).first()
+    @classmethod
+    async def read_by_id(cls, db: AsyncSession, sid: int):
+        result = await db.execute(
+            select(cls).where(cls.id == sid)
+        )
+        return result.scalar_one_or_none()
 
-    def update(self, db: Session, payload: dict):
+    async def update(self, db: AsyncSession, payload: dict):
         payload = {k: v for k, v in payload.items() if v is not None}
         for key, value in payload.items():
             if hasattr(self, key):
                 setattr(self, key, value)
-        db.commit()
-        db.refresh(self)
+        await db.commit()
+        await db.refresh(self)
 
-    @staticmethod
-    def delete(db: Session, sid: int):
-        db.query(SubscribeShare).filter(or_(SubscribeShare.id == sid)).delete()
-        db.commit()
+    @classmethod
+    async def delete(cls, db: AsyncSession, sid: int):
+        await db.execute(
+            delete(cls).where(cls.id == sid)
+        )
+        await db.commit()
 
-    @staticmethod
-    def list(db: Session, name: str, page: int = 1, count: int = 30):
+    @classmethod
+    async def list(cls, db: AsyncSession, name: str, page: int = 1, count: int = 30):
         if name:
-            return db.query(SubscribeShare).filter(
-                or_(SubscribeShare.share_title.like(f'%{name}%'),
-                    SubscribeShare.name.like(f'%{name}%'), )
-            ).order_by(
-                SubscribeShare.date.desc()
-            ).offset((page - 1) * count).limit(count).all()
+            result = await db.execute(
+                select(cls)
+                .where(
+                    or_(
+                        cls.share_title.like(f'%{name}%'),
+                        cls.name.like(f'%{name}%')
+                    )
+                )
+                .order_by(cls.date.desc())
+                .offset((page - 1) * count)
+                .limit(count)
+            )
         else:
-            return db.query(SubscribeShare).order_by(
-                SubscribeShare.date.desc()
-            ).offset((page - 1) * count).limit(count).all()
+            result = await db.execute(
+                select(cls)
+                .order_by(cls.date.desc())
+                .offset((page - 1) * count)
+                .limit(count)
+            )
+        return result.scalars().all()
 
-    @staticmethod
-    def share_statistics(db: Session):
+    @classmethod
+    async def share_statistics(cls, db: AsyncSession):
         """
         统计每个分享人分享的媒体数量以及总的复用人次
         """
-        return db.query(
-            SubscribeShare.share_user,
-            func.count(SubscribeShare.id).label('share_count'),
-            func.sum(SubscribeShare.count).label('total_reuse_count')
-        ).group_by(SubscribeShare.share_user).order_by(
-            func.count(SubscribeShare.id).desc()
-        ).all()
+        result = await db.execute(
+            select(
+                cls.share_user,
+                func.count(cls.id).label('share_count'),
+                func.sum(cls.count).label('total_reuse_count')
+            )
+            .group_by(cls.share_user)
+            .order_by(func.count(cls.id).desc())
+        )
+        return result.all()
 
     def dict(self):
         return {c.name: getattr(self, c.name, None) for c in self.__table__.columns} # noqa
@@ -277,46 +325,68 @@ class WorkflowShare(Base):
     # 复用人次
     count = Column(Integer, default=0)
 
-    def create(self, db: Session):
+    async def create(self, db: AsyncSession):
         db.add(self)
-        db.commit()
-        db.refresh(self)
+        await db.commit()
+        await db.refresh(self)
 
-    @staticmethod
-    def read(db: Session, title: str, user: str):
-        return db.query(WorkflowShare).filter(and_(WorkflowShare.share_title == title,
-                                                   WorkflowShare.share_user == user)).first()
+    @classmethod
+    async def read(cls, db: AsyncSession, title: str, user: str):
+        result = await db.execute(
+            select(cls).where(
+                and_(
+                    cls.share_title == title,
+                    cls.share_user == user
+                )
+            )
+        )
+        return result.scalar_one_or_none()
 
-    @staticmethod
-    def read_by_id(db: Session, sid: int):
-        return db.query(WorkflowShare).filter(and_(WorkflowShare.id == sid)).first()
+    @classmethod
+    async def read_by_id(cls, db: AsyncSession, sid: int):
+        result = await db.execute(
+            select(cls).where(cls.id == sid)
+        )
+        return result.scalar_one_or_none()
 
-    def update(self, db: Session, payload: dict):
+    async def update(self, db: AsyncSession, payload: dict):
         payload = {k: v for k, v in payload.items() if v is not None}
         for key, value in payload.items():
             if hasattr(self, key):
                 setattr(self, key, value)
-        db.commit()
-        db.refresh(self)
+        await db.commit()
+        await db.refresh(self)
 
-    @staticmethod
-    def delete(db: Session, sid: int):
-        db.query(WorkflowShare).filter(or_(WorkflowShare.id == sid)).delete()
-        db.commit()
+    @classmethod
+    async def delete(cls, db: AsyncSession, sid: int):
+        await db.execute(
+            delete(cls).where(cls.id == sid)
+        )
+        await db.commit()
 
-    @staticmethod
-    def list(db: Session, name: str, page: int = 1, count: int = 30):
+    @classmethod
+    async def list(cls, db: AsyncSession, name: str, page: int = 1, count: int = 30):
         if name:
-            return db.query(WorkflowShare).filter(
-                or_(WorkflowShare.share_title.like(f'%{name}%'),
-                    WorkflowShare.name.like(f'%{name}%'), )
-            ).order_by(
-                WorkflowShare.date.desc()
-            ).offset((page - 1) * count).limit(count).all()
+            result = await db.execute(
+                select(cls)
+                .where(
+                    or_(
+                        cls.share_title.like(f'%{name}%'),
+                        cls.name.like(f'%{name}%')
+                    )
+                )
+                .order_by(cls.date.desc())
+                .offset((page - 1) * count)
+                .limit(count)
+            )
         else:
-            return db.query(WorkflowShare).order_by(
-                WorkflowShare.date.desc()
-            ).offset((page - 1) * count).limit(count).all()
+            result = await db.execute(
+                select(cls)
+                .order_by(cls.date.desc())
+                .offset((page - 1) * count)
+                .limit(count)
+            )
+        return result.scalars().all()
 
     def dict(self):
         return {c.name: getattr(self, c.name, None) for c in self.__table__.columns} # noqa
