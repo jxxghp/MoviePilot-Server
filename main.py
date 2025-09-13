@@ -10,17 +10,38 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from models import *
 
-# 数据库连接串
-SQLALCHEMY_DATABASE_URL = f"sqlite+aiosqlite:///{os.getenv('CONFIG_DIR', '.')}/server.db"
-# 数据库引擎
-Engine = create_async_engine(SQLALCHEMY_DATABASE_URL,
-                             echo=False,
-                             pool_pre_ping=True,
-                             pool_size=20,
-                             max_overflow=10,
-                             pool_recycle=3600,
-                             pool_timeout=180,
-                             )
+# 数据库配置
+DATABASE_TYPE = os.getenv('DATABASE_TYPE', 'sqlite').lower()
+CONFIG_DIR = os.getenv('CONFIG_DIR', '.')
+
+if DATABASE_TYPE == 'postgresql':
+    # PostgreSQL配置
+    DB_HOST = os.getenv('DB_HOST', 'localhost')
+    DB_PORT = os.getenv('DB_PORT', '5432')
+    DB_NAME = os.getenv('DB_NAME', 'moviepilot')
+    DB_USER = os.getenv('DB_USER', 'postgres')
+    DB_PASSWORD = os.getenv('DB_PASSWORD', 'postgres')
+    SQLALCHEMY_DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+else:
+    # SQLite配置（默认）
+    SQLALCHEMY_DATABASE_URL = f"sqlite+aiosqlite:///{CONFIG_DIR}/server.db"
+# 数据库引擎配置
+if DATABASE_TYPE == 'postgresql':
+    # PostgreSQL引擎配置
+    Engine = create_async_engine(SQLALCHEMY_DATABASE_URL,
+                                 echo=False,
+                                 pool_pre_ping=True,
+                                 pool_size=20,
+                                 max_overflow=10,
+                                 pool_recycle=3600,
+                                 pool_timeout=180,
+                                 )
+else:
+    # SQLite引擎配置
+    Engine = create_async_engine(SQLALCHEMY_DATABASE_URL,
+                                 echo=False,
+                                 pool_pre_ping=True,
+                                 )
 # 数据库会话
 AsyncSessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=Engine)
 

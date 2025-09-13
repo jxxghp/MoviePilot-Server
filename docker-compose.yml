@@ -2,15 +2,40 @@ version: '3.3'
 
 services:
 
+    postgres:
+        image: 'postgres:17'
+        container_name: moviepilot-postgres
+        environment:
+            POSTGRES_DB: moviepilot
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: postgres
+        volumes:
+            - '/root/postgresql:/var/lib/postgresql/data'
+        ports:
+            - target: 5432
+              published: 5432
+              protocol: tcp
+        restart: always
+
     moviepilot-server:
         image: 'jxxghp/moviepilot-server:latest'
         container_name: moviepilot-server
+        environment:
+            - DATABASE_TYPE=postgresql
+            - DB_HOST=postgres
+            - DB_PORT=5432
+            - DB_NAME=moviepilot
+            - DB_USER=postgres
+            - DB_PASSWORD=password
+            - CONFIG_DIR=/config
         ports:
             - target: 3001
               published: 3001
               protocol: tcp
         volumes:
             - '/root/moviepilot:/config'
+        depends_on:
+            - postgres
         restart: always
 
     cookiecloud:
