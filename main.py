@@ -493,4 +493,4 @@ async def workflow_fork(shareid: int, db: AsyncSession = Depends(get_db)):
 
 
 if __name__ == '__main__':
-    uvicorn.run('main:App', host="0.0.0.0", port=3001, reload=False)
+    uvicorn.run('main:App', host="::", port=3001, reload=False)
