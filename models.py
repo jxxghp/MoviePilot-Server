@@ -93,25 +93,39 @@ class SubscribeStatistics(Base):
 
     @classmethod
     async def read(cls, db: AsyncSession, mid: Union[str, int], season: int):
+        # 将 mid 转换为适当的类型进行比较
+        if isinstance(mid, str):
+            try:
+                mid_int = int(mid)
+            except ValueError:
+                mid_int = None
+        else:
+            mid_int = mid
+            mid = str(mid)
+
         if season:
+            conditions = []
+            if mid_int is not None:
+                conditions.append(cls.tmdbid == mid_int)
+            conditions.append(cls.doubanid == mid)
+
             result = await db.execute(
                 select(cls).where(
                     and_(
-                        or_(
-                            cls.tmdbid == mid,
-                            cls.doubanid == mid
-                        ),
+                        or_(*conditions),
                         cls.season == season
                     )
                 )
             )
         else:
+            conditions = []
+            if mid_int is not None:
+                conditions.append(cls.tmdbid == mid_int)
+            conditions.append(cls.doubanid == mid)
+
             result = await db.execute(
                 select(cls).where(
-                    or_(
-                        cls.tmdbid == mid,
-                        cls.doubanid == mid
-                    )
+                    or_(*conditions)
                 )
             )
         return result.scalars().first()
