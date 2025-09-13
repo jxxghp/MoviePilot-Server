@@ -1,10 +1,25 @@
+import os
 from typing import Union
 
-from sqlalchemy import Column, Integer, String, Float, or_, and_, func, select, delete
+from sqlalchemy import Column, Integer, String, Float, or_, and_, func, select, delete, Identity, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
+
+
+DATABASE_TYPE = os.getenv('DATABASE_TYPE', 'sqlite').lower()
+
+def get_id_column():
+    """
+    根据数据库类型返回合适的ID列定义
+    """
+    if DATABASE_TYPE == "postgresql":
+        # PostgreSQL使用SERIAL类型，让数据库自动处理序列
+        return Column(Integer, Identity(start=1, cycle=True), primary_key=True, index=True)
+    else:
+        # SQLite使用Sequence
+        return Column(Integer, Sequence('id'), primary_key=True, index=True)
 
 
 class PluginStatistics(Base):
@@ -13,7 +28,7 @@ class PluginStatistics(Base):
     """
     __tablename__ = "PLUGIN_STATISTICS"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id = get_id_column()
     plugin_id = Column(String, unique=True, index=True)
     count = Column(Integer)
 
@@ -60,7 +75,7 @@ class SubscribeStatistics(Base):
     """
     __tablename__ = "SUBSCRIBE_STATISTICS"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id = get_id_column()
     # 标题
     name = Column(String, nullable=False)
     # 年份
@@ -166,7 +181,7 @@ class SubscribeShare(Base):
     """
     __tablename__ = "SUBSCRIBE_SHARE"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id = get_id_column()
     # 分享标题
     share_title = Column(String, index=True, nullable=False)
     # 分享介绍
@@ -313,7 +328,7 @@ class WorkflowShare(Base):
     """
     __tablename__ = "WORKFLOW_SHARE"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id = get_id_column()
     # 分享标题
     share_title = Column(String, index=True, nullable=False)
     # 分享介绍
