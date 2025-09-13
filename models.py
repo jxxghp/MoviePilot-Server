@@ -13,7 +13,7 @@ class PluginStatistics(Base):
     """
     __tablename__ = "PLUGIN_STATISTICS"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     plugin_id = Column(String, unique=True, index=True)
     count = Column(Integer)
 
@@ -60,7 +60,7 @@ class SubscribeStatistics(Base):
     """
     __tablename__ = "SUBSCRIBE_STATISTICS"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     # 标题
     name = Column(String, nullable=False)
     # 年份
@@ -166,7 +166,7 @@ class SubscribeShare(Base):
     """
     __tablename__ = "SUBSCRIBE_SHARE"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     # 分享标题
     share_title = Column(String, index=True, nullable=False)
     # 分享介绍
@@ -313,7 +313,7 @@ class WorkflowShare(Base):
     """
     __tablename__ = "WORKFLOW_SHARE"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     # 分享标题
     share_title = Column(String, index=True, nullable=False)
     # 分享介绍
