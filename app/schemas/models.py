@@ -24,6 +24,7 @@ class SubscribeStatisticItem(BaseModel):
     imdbid: Optional[str] = None
     tvdbid: Optional[int] = None
     doubanid: Optional[str] = None
+    genre_ids: Optional[str] = None
     season: Optional[int] = None
     poster: Optional[str] = None
     backdrop: Optional[str] = None

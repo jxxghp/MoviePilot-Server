@@ -5,8 +5,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.core.config import settings
 from app.db.database import engine
-from app.models.database import Base
+from app.models import Base
 from app.api.v1.api import api_router
+from app.db.migrator import DatabaseMigrator
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -17,6 +21,15 @@ async def lifespan(app: FastAPI):
     # 启动时初始化数据库
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    
+    # 执行数据库迁移
+    try:
+        migrator = DatabaseMigrator()
+        migrator.upgrade()
+    except Exception as e:
+        logger.error(f"Database migration failed: {e}")
+        raise
+    
     yield
     # 关闭时清理资源
     await engine.dispose()

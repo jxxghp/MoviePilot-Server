@@ -26,6 +26,8 @@ class SubscribeStatistics(Base):
     tvdbid = Column(Integer)
     doubanid = Column(String, index=True)
     bangumiid = Column(Integer, index=True)
+    # genre_ids,分隔
+    genre_ids = Column(String)
     # 季号
     season = Column(Integer)
     # 海报
