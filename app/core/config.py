@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     HOST: str = "::"
     PORT: int = 3001
     
+    # TheMovieDB API配置
+    TMDB_API_KEY: str = ""
+    TMDB_API_URL: str = "https://api.themoviedb.org/3"
+    TMDB_TIMEOUT: int = 10
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
