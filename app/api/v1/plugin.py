@@ -3,6 +3,7 @@
 """
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.db.deps import get_db
 from app.schemas.models import PluginStatisticList
 from app.services.plugin import PluginService

@@ -2,6 +2,7 @@
 API路由汇总
 """
 from fastapi import APIRouter
+
 from app.api.v1 import plugin, subscribe, subscribe_share, workflow_share
 
 api_router = APIRouter()

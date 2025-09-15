@@ -3,6 +3,7 @@
 """
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.db.deps import get_db
 from app.schemas.models import SubscribeStatisticItem, SubscribeStatisticList
 from app.services.subscribe import SubscribeService
@@ -35,7 +36,8 @@ async def subscribe_report(subscribes: SubscribeStatisticList, db: AsyncSession 
 
 
 @router.get("/statistic")
-async def subscribe_statistic(stype: str, page: int = 1, count: int = 30, genre_id: int = None, min_rating: float = None, max_rating: float = None, db: AsyncSession = Depends(get_db)):
+async def subscribe_statistic(stype: str, page: int = 1, count: int = 30, genre_id: int = None,
+                              min_rating: float = None, max_rating: float = None, db: AsyncSession = Depends(get_db)):
     """
     查询订阅统计
     """

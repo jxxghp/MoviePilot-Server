@@ -3,6 +3,7 @@
 """
 from sqlalchemy import Column, Integer, Identity, Sequence
 from sqlalchemy.orm import declarative_base
+
 from app.core.config import settings
 
 Base = declarative_base()

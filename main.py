@@ -1,27 +1,29 @@
 """
 FastAPI应用主文件
 """
+import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
+
+from app.api.v1.api import api_router
 from app.core.config import settings
 from app.db.database import engine
-from app.models import Base
-from app.api.v1.api import api_router
 from app.db.migrator import DatabaseMigrator
-import logging
+from app.models import Base
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_: FastAPI):
     """
     应用生命周期管理
     """
     # 启动时初始化数据库
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     # 执行数据库迁移
     try:
         migrator = DatabaseMigrator()
@@ -29,7 +31,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Database migration failed: {e}")
         raise
-    
+
     yield
     # 关闭时清理资源
     await engine.dispose()
@@ -59,9 +61,10 @@ async def root():
 
 if __name__ == '__main__':
     import uvicorn
+
     uvicorn.run(
-        'main:app', 
-        host=settings.HOST, 
-        port=settings.PORT, 
+        'main:app',
+        host=settings.HOST,
+        port=settings.PORT,
         reload=settings.DEBUG
     )

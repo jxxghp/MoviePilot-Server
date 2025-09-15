@@ -3,6 +3,7 @@
 """
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.db.deps import get_db
 from app.schemas.models import SubscribeShareItem
 from app.services.subscribe_share import SubscribeShareService
@@ -36,7 +37,8 @@ async def subscribe_share_delete(sid: int, share_uid: str, db: AsyncSession = De
 
 
 @router.get("/shares")
-async def subscribe_shares(name: str = None, page: int = 1, count: int = 30, genre_id: int = None, min_rating: float = None, max_rating: float = None, db: AsyncSession = Depends(get_db)):
+async def subscribe_shares(name: str = None, page: int = 1, count: int = 30, genre_id: int = None,
+                           min_rating: float = None, max_rating: float = None, db: AsyncSession = Depends(get_db)):
     """
     查询分享的订阅
     """
