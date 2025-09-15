@@ -1,14 +1,16 @@
+"""
+数据库模型
+"""
 import os
 from typing import Union
-
 from sqlalchemy import Column, Integer, String, Float, or_, and_, func, select, delete, Identity, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
-
 DATABASE_TYPE = os.getenv('DATABASE_TYPE', 'sqlite').lower()
+
 
 def get_id_column():
     """
@@ -66,7 +68,7 @@ class PluginStatistics(Base):
         return result.all()
 
     def dict(self):
-        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}  # noqa
+        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}
 
 
 class SubscribeStatistics(Base):
@@ -172,7 +174,7 @@ class SubscribeStatistics(Base):
         return result.scalars().all()
 
     def dict(self):
-        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}  # noqa
+        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}
 
 
 class SubscribeShare(Base):
@@ -319,7 +321,7 @@ class SubscribeShare(Base):
         return result.all()
 
     def dict(self):
-        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}  # noqa
+        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}
 
 
 class WorkflowShare(Base):
@@ -418,4 +420,4 @@ class WorkflowShare(Base):
         return result.scalars().all()
 
     def dict(self):
-        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}  # noqa
+        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}
