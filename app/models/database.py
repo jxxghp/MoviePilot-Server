@@ -1,22 +1,20 @@
 """
 数据库模型
 """
-import os
 from typing import Union
 from sqlalchemy import Column, Integer, String, Float, or_, and_, func, select, delete, Identity, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import declarative_base
+from app.core.config import settings
 
 Base = declarative_base()
-
-DATABASE_TYPE = os.getenv('DATABASE_TYPE', 'sqlite').lower()
 
 
 def get_id_column():
     """
     根据数据库类型返回合适的ID列定义
     """
-    if DATABASE_TYPE == "postgresql":
+    if settings.is_postgresql:
         # PostgreSQL使用SERIAL类型，让数据库自动处理序列
         return Column(Integer, Identity(start=1, cycle=True), primary_key=True, index=True)
     else:

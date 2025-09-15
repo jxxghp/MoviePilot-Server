@@ -1,45 +1,48 @@
 """
 应用配置管理
 """
-import os
-from typing import Optional
+from pydantic import BaseSettings
 
 
-class Settings:
+class Settings(BaseSettings):
     """应用配置类"""
     
     # 数据库配置
-    DATABASE_TYPE: str = os.getenv('DATABASE_TYPE', 'sqlite').lower()
-    CONFIG_DIR: str = os.getenv('CONFIG_DIR', '.')
+    database_type: str = "sqlite"
+    config_dir: str = "."
     
     # PostgreSQL配置
-    DB_HOST: str = os.getenv('DB_HOST', 'localhost')
-    DB_PORT: str = os.getenv('DB_PORT', '5432')
-    DB_NAME: str = os.getenv('DB_NAME', 'moviepilot')
-    DB_USER: str = os.getenv('DB_USER', 'postgres')
-    DB_PASSWORD: str = os.getenv('DB_PASSWORD', 'postgres')
+    db_host: str = "localhost"
+    db_port: str = "5432"
+    db_name: str = "moviepilot"
+    db_user: str = "postgres"
+    db_password: str = "postgres"
     
     # 应用配置
-    APP_NAME: str = "MoviePilot Server"
-    APP_VERSION: str = "1.0.0"
-    DEBUG: bool = os.getenv('DEBUG', 'false').lower() == 'true'
+    app_name: str = "MoviePilot Server"
+    app_version: str = "1.0.0"
+    debug: bool = False
     
     # 服务器配置
-    HOST: str = os.getenv('HOST', '::')
-    PORT: int = int(os.getenv('PORT', '3001'))
+    host: str = "::"
+    port: int = 3001
+    
+    class Config:
+        env_file = ".env"
+        case_sensitive = False
     
     @property
     def database_url(self) -> str:
         """获取数据库连接URL"""
-        if self.DATABASE_TYPE == 'postgresql':
-            return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        if self.database_type.lower() == 'postgresql':
+            return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
         else:
-            return f"sqlite+aiosqlite:///{self.CONFIG_DIR}/server.db"
+            return f"sqlite+aiosqlite:///{self.config_dir}/server.db"
     
     @property
     def is_postgresql(self) -> bool:
         """判断是否使用PostgreSQL"""
-        return self.DATABASE_TYPE == 'postgresql'
+        return self.database_type.lower() == 'postgresql'
 
 
 # 全局配置实例
