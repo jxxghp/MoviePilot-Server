@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.deps import get_db
 from app.schemas.models import WorkflowShareItem
-from app.services.workflow_share_service import WorkflowShareService
+from app.services.workflow_share import WorkflowShareService
 
 router = APIRouter()
 

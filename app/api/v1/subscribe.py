@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.deps import get_db
 from app.schemas.models import SubscribeStatisticItem, SubscribeStatisticList
-from app.services.subscribe_service import SubscribeService
+from app.services.subscribe import SubscribeService
 
 router = APIRouter()
 

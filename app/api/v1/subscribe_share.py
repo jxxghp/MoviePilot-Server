@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.deps import get_db
 from app.schemas.models import SubscribeShareItem
-from app.services.subscribe_share_service import SubscribeShareService
+from app.services.subscribe_share import SubscribeShareService
 
 router = APIRouter()
 
