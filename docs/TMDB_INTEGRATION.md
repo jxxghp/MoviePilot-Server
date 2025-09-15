@@ -6,10 +6,12 @@
 
 ## 配置
 
-在环境变量或`.env`文件中设置TheMovieDB API密钥：
+系统已内置默认的TheMovieDB API密钥 (`db55323b8d3e4154498498a75642b381`)，无需额外配置即可使用。
+
+如果需要使用自己的API密钥，可以在环境变量或`.env`文件中设置：
 
 ```bash
-TMDB_API_KEY=your_tmdb_api_key_here
+TMDB_API_KEY=your_custom_tmdb_api_key_here
 ```
 
 ## 功能特性
@@ -64,10 +66,4 @@ genre_ids = await tmdb_service.get_genre_ids(tmdb_id, media_type)
 
 ## 测试
 
-运行测试脚本：
-
-```bash
-python test_tmdb.py
-```
-
-注意：需要先设置`TMDB_API_KEY`环境变量。
+系统已配置默认API密钥，可以直接使用TheMovieDB集成功能，无需额外配置。
