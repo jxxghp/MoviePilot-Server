@@ -101,12 +101,18 @@ class SubscribeStatistics(Base):
         await db.commit()
 
     @classmethod
-    async def list(cls, db: AsyncSession, stype: str, page: int = 1, count: int = 30, genre_id: int = None):
+    async def list(cls, db: AsyncSession, stype: str, page: int = 1, count: int = 30, genre_id: int = None, min_rating: float = None, max_rating: float = None):
         query = select(cls).where(cls.type == stype)
         
         # 如果提供了genre_id，则添加genre_ids过滤条件
         if genre_id is not None:
             query = query.where(cls.genre_ids.like(f'%{genre_id}%'))
+        
+        # 如果提供了评分范围，则添加评分过滤条件
+        if min_rating is not None:
+            query = query.where(cls.vote >= min_rating)
+        if max_rating is not None:
+            query = query.where(cls.vote <= max_rating)
         
         result = await db.execute(
             query
