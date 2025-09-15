@@ -16,6 +16,13 @@ TMDB_API_KEY=your_custom_tmdb_api_key_here
 
 ## 功能特性
 
+### Genre IDs格式说明
+
+TheMovieDB API返回的genres信息格式：
+- **API响应**：`genres` 数组，每个元素包含 `id` 和 `name` 字段
+- **存储格式**：提取所有 `id` 并用逗号连接，如 `"18,53"`（对应 Drama, Thriller）
+- **示例**：电影《搏击俱乐部》的genre_ids为 `"18,53"`
+
 ### 1. 订阅统计接口 (`/subscribe/add`)
 
 当添加订阅统计时，如果：
@@ -23,7 +30,7 @@ TMDB_API_KEY=your_custom_tmdb_api_key_here
 - 但提供了`tmdbid`和`type`
 
 系统会自动调用TheMovieDB API获取：
-- `genre_ids` - 类型ID列表
+- `genre_ids` - 类型ID列表（逗号分隔的字符串格式，如 "18,53"）
 - `name` - 媒体名称（如果缺失）
 - `year` - 年份（如果缺失）
 - `poster` - 海报URL（如果缺失）
@@ -37,7 +44,7 @@ TMDB_API_KEY=your_custom_tmdb_api_key_here
 - 没有提供`genre_ids`
 - 但提供了`tmdbid`和`type`
 
-系统会自动调用TheMovieDB API获取上述信息。
+系统会自动调用TheMovieDB API获取上述信息（包括逗号分隔的genre_ids格式）。
 
 ## API接口
 
