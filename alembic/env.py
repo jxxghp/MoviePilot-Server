@@ -1,4 +1,4 @@
-THIS SHOULD BE A LINTER ERROR"""Database migration environment for Alembic."""
+"""Database migration environment for Alembic."""
 
 import asyncio
 from logging.config import fileConfig
