@@ -7,7 +7,7 @@ from app.core.config import settings
 from app.db.database import engine
 from app.models import Base
 from app.api.v1.api import api_router
-from app.db.upgrade import upgrade_database
+from app.db.migrator import DatabaseMigrator
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,11 +22,12 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
-    # 执行数据库升级（添加缺失的列）
+    # 执行数据库迁移
     try:
-        await upgrade_database(engine)
+        migrator = DatabaseMigrator()
+        migrator.upgrade()
     except Exception as e:
-        logger.error(f"Database upgrade failed: {e}")
+        logger.error(f"Database migration failed: {e}")
         raise
     
     yield

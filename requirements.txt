@@ -9,3 +9,4 @@ requests>=2.30.0
 cachetools>=5.3.0
 cacheout>=0.14.1
 pydantic-settings>=2.0.0
+alembic>=1.12.0
