@@ -4,7 +4,7 @@
 """
 import argparse
 import logging
-from app.db.migrator import DatabaseMigrator
+from tools.database import DatabaseMigrator
 
 # 配置日志
 logging.basicConfig(

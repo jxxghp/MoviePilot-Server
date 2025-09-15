@@ -3,7 +3,7 @@
 """
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.database import AsyncSessionLocal
+from tools.database import get_db_session
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -11,8 +11,5 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     获取数据库会话
     :return: AsyncSession
     """
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+    async for session in get_db_session():
+        yield session
