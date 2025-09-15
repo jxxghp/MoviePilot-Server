@@ -36,11 +36,11 @@ async def subscribe_share_delete(sid: int, share_uid: str, db: AsyncSession = De
 
 
 @router.get("/shares")
-async def subscribe_shares(name: str = None, page: int = 1, count: int = 30, genre_id: int = None, db: AsyncSession = Depends(get_db)):
+async def subscribe_shares(name: str = None, page: int = 1, count: int = 30, genre_id: int = None, min_rating: float = None, max_rating: float = None, db: AsyncSession = Depends(get_db)):
     """
     查询分享的订阅
     """
-    return await SubscribeShareService.get_shares(db, name, page, count, genre_id)
+    return await SubscribeShareService.get_shares(db, name, page, count, genre_id, min_rating, max_rating)
 
 
 @router.get("/fork/{shareid}")

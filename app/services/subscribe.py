@@ -82,13 +82,13 @@ class SubscribeService:
         return {"code": 0, "message": "success"}
     
     @staticmethod
-    async def get_statistics(db: AsyncSession, stype: str, page: int = 1, count: int = 30, genre_id: int = None) -> List[Dict[str, Any]]:
+    async def get_statistics(db: AsyncSession, stype: str, page: int = 1, count: int = 30, genre_id: int = None, min_rating: float = None, max_rating: float = None) -> List[Dict[str, Any]]:
         """查询订阅统计"""
-        cache_key = f"subscribe_{stype}_{page}_{count}_{genre_id}"
+        cache_key = f"subscribe_{stype}_{page}_{count}_{genre_id}_{min_rating}_{max_rating}"
         cached_data = cache_manager.statistic_cache.get(cache_key)
         
         if not cached_data:
-            statistics = await SubscribeStatistics.list(db, stype=stype, page=page, count=count, genre_id=genre_id)
+            statistics = await SubscribeStatistics.list(db, stype=stype, page=page, count=count, genre_id=genre_id, min_rating=min_rating, max_rating=max_rating)
             cached_data = [sta.dict() for sta in statistics]
             cache_manager.statistic_cache.set(cache_key, cached_data)
         

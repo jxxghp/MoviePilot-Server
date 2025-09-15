@@ -35,8 +35,8 @@ async def subscribe_report(subscribes: SubscribeStatisticList, db: AsyncSession 
 
 
 @router.get("/statistic")
-async def subscribe_statistic(stype: str, page: int = 1, count: int = 30, genre_id: int = None, db: AsyncSession = Depends(get_db)):
+async def subscribe_statistic(stype: str, page: int = 1, count: int = 30, genre_id: int = None, min_rating: float = None, max_rating: float = None, db: AsyncSession = Depends(get_db)):
     """
     查询订阅统计
     """
-    return await SubscribeService.get_statistics(db, stype, page, count, genre_id)
+    return await SubscribeService.get_statistics(db, stype, page, count, genre_id, min_rating, max_rating)
