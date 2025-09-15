@@ -101,10 +101,15 @@ class SubscribeStatistics(Base):
         await db.commit()
 
     @classmethod
-    async def list(cls, db: AsyncSession, stype: str, page: int = 1, count: int = 30):
+    async def list(cls, db: AsyncSession, stype: str, page: int = 1, count: int = 30, genre_id: int = None):
+        query = select(cls).where(cls.type == stype)
+        
+        # 如果提供了genre_id，则添加genre_ids过滤条件
+        if genre_id is not None:
+            query = query.where(cls.genre_ids.like(f'%{genre_id}%'))
+        
         result = await db.execute(
-            select(cls)
-            .where(cls.type == stype)
+            query
             .order_by(cls.count.desc())
             .offset((page - 1) * count)
             .limit(count)
