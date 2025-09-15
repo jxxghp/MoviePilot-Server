@@ -1,7 +1,7 @@
 """
 应用配置管理
 """
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
