@@ -57,13 +57,13 @@ class SubscribeShareService:
         return {"code": 1, "message": "分享不存在或无权限"}
     
     @staticmethod
-    async def get_shares(db: AsyncSession, name: str = None, page: int = 1, count: int = 30) -> List[Dict[str, Any]]:
+    async def get_shares(db: AsyncSession, name: str = None, page: int = 1, count: int = 30, genre_id: int = None) -> List[Dict[str, Any]]:
         """查询分享的订阅"""
-        cache_key = f"subscribe_{name}_{page}_{count}"
+        cache_key = f"subscribe_{name}_{page}_{count}_{genre_id}"
         cached_data = cache_manager.share_cache.get(cache_key)
         
         if not cached_data:
-            shares = await SubscribeShare.list(db, name=name, page=page, count=count)
+            shares = await SubscribeShare.list(db, name=name, page=page, count=count, genre_id=genre_id)
             cached_data = [sha.dict() for sha in shares]
             cache_manager.share_cache.set(cache_key, cached_data)
         

@@ -110,27 +110,27 @@ class SubscribeShare(Base):
         await db.commit()
 
     @classmethod
-    async def list(cls, db: AsyncSession, name: str, page: int = 1, count: int = 30):
+    async def list(cls, db: AsyncSession, name: str, page: int = 1, count: int = 30, genre_id: int = None):
         if name:
-            result = await db.execute(
-                select(cls)
-                .where(
-                    or_(
-                        cls.share_title.like(f'%{name}%'),
-                        cls.name.like(f'%{name}%')
-                    )
+            query = select(cls).where(
+                or_(
+                    cls.share_title.like(f'%{name}%'),
+                    cls.name.like(f'%{name}%')
                 )
-                .order_by(cls.date.desc())
-                .offset((page - 1) * count)
-                .limit(count)
             )
         else:
-            result = await db.execute(
-                select(cls)
-                .order_by(cls.date.desc())
-                .offset((page - 1) * count)
-                .limit(count)
-            )
+            query = select(cls)
+        
+        # 如果提供了genre_id，则添加genre_ids过滤条件
+        if genre_id is not None:
+            query = query.where(cls.genre_ids.like(f'%{genre_id}%'))
+        
+        result = await db.execute(
+            query
+            .order_by(cls.date.desc())
+            .offset((page - 1) * count)
+            .limit(count)
+        )
         return result.scalars().all()
 
     @classmethod
