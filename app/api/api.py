@@ -3,7 +3,7 @@ API路由汇总
 """
 from fastapi import APIRouter
 
-from app.api.v1 import plugin_statistic, subscribe_statistic, subscribe_share, workflow_share
+from app.api import plugin_statistic, subscribe_statistic, subscribe_share, workflow_share
 
 api_router = APIRouter()
 

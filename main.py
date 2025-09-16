@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 import asyncio
 
-from app.api.v1.api import api_router
+from app.api.api import api_router
 from app.core.config import settings
 from app.db.database import engine
 from app.db.migrator import DatabaseMigrator
