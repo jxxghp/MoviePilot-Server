@@ -49,6 +49,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Provide an alias for environments that expect `main:App`
+App = app
+
 # 包含API路由
 app.include_router(api_router, prefix="/api/v1")
 
