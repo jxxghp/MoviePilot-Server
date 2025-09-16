@@ -2,8 +2,16 @@
 Pydantic模型定义
 """
 from typing import List, Optional
+from enum import Enum
 
 from pydantic import BaseModel
+
+
+class SortType(str, Enum):
+    """排序类型枚举"""
+    TIME = "time"  # 按时间排序
+    COUNT = "count"  # 按人数排序
+    RATING = "rating"  # 按评分排序
 
 
 class PluginStatisticItem(BaseModel):

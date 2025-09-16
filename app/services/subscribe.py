@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache_manager
 from app.models import SubscribeStatistics
-from app.schemas.models import SubscribeStatisticItem
+from app.schemas.models import SubscribeStatisticItem, SortType
 from app.services.tmdb import tmdb_service
 
 
@@ -85,14 +85,14 @@ class SubscribeService:
 
     @staticmethod
     async def get_statistics(db: AsyncSession, stype: str, page: int = 1, count: int = 30, genre_id: int = None,
-                             min_rating: float = None, max_rating: float = None) -> List[Dict[str, Any]]:
+                             min_rating: float = None, max_rating: float = None, sort_type: SortType = SortType.COUNT) -> List[Dict[str, Any]]:
         """查询订阅统计"""
-        cache_key = f"subscribe_{stype}_{page}_{count}_{genre_id}_{min_rating}_{max_rating}"
+        cache_key = f"subscribe_{stype}_{page}_{count}_{genre_id}_{min_rating}_{max_rating}_{sort_type}"
         cached_data = cache_manager.statistic_cache.get(cache_key)
 
         if not cached_data:
             statistics = await SubscribeStatistics.list(db, stype=stype, page=page, count=count, genre_id=genre_id,
-                                                        min_rating=min_rating, max_rating=max_rating)
+                                                        min_rating=min_rating, max_rating=max_rating, sort_type=sort_type)
             cached_data = [sta.dict() for sta in statistics]
             cache_manager.statistic_cache.set(cache_key, cached_data)
 

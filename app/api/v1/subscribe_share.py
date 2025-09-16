@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.deps import get_db
-from app.schemas.models import SubscribeShareItem
+from app.schemas.models import SubscribeShareItem, SortType
 from app.services.subscribe_share import SubscribeShareService
 
 router = APIRouter()
@@ -38,11 +38,12 @@ async def subscribe_share_delete(sid: int, share_uid: str, db: AsyncSession = De
 
 @router.get("/shares")
 async def subscribe_shares(name: str = None, page: int = 1, count: int = 30, genre_id: int = None,
-                           min_rating: float = None, max_rating: float = None, db: AsyncSession = Depends(get_db)):
+                           min_rating: float = None, max_rating: float = None, 
+                           sort_type: SortType = SortType.TIME, db: AsyncSession = Depends(get_db)):
     """
     查询分享的订阅
     """
-    return await SubscribeShareService.get_shares(db, name, page, count, genre_id, min_rating, max_rating)
+    return await SubscribeShareService.get_shares(db, name, page, count, genre_id, min_rating, max_rating, sort_type)
 
 
 @router.get("/fork/{shareid}")
