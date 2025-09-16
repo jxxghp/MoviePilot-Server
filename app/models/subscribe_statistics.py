@@ -124,8 +124,8 @@ class SubscribeStatistics(Base):
         elif sort_type == SortType.RATING:
             query = query.order_by(desc(cls.vote))
         elif sort_type == SortType.TIME:
-            # 订阅统计没有时间字段，按人数排序作为默认
-            query = query.order_by(desc(cls.count))
+            # 改为按年份倒序、人数倒序
+            query = query.order_by(desc(cls.year), desc(cls.count))
         else:
             # 默认按人数倒序
             query = query.order_by(desc(cls.count))
