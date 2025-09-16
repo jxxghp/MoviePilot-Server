@@ -26,7 +26,7 @@ services:
             - DB_PORT=5432
             - DB_NAME=moviepilot
             - DB_USER=postgres
-            - DB_PASSWORD=password
+            - DB_PASSWORD=postgres
             - CONFIG_DIR=/config
         ports:
             - target: 3001
