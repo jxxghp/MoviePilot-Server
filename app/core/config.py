@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # 服务器配置
-    HOST: str = "::"
+    HOST: str = "0.0.0.0"
     PORT: int = 3001
 
     # TheMovieDB API配置
