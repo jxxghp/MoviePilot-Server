@@ -2,6 +2,8 @@
 FastAPI应用主文件
 """
 import logging
+from logging.config import dictConfig
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -12,6 +14,57 @@ from app.core.config import settings
 from app.db.database import engine
 from app.db.migrator import DatabaseMigrator
 from app.models import Base
+
+
+# 配置控制台日志（包含 uvicorn 访问日志与错误日志）
+def _install_logging_config():
+    log_level = "DEBUG" if settings.DEBUG else "INFO"
+
+    dictConfig({
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "()": "uvicorn.logging.DefaultFormatter",
+                "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                "datefmt": "%Y-%m-%d %H:%M:%S",
+            },
+            "access": {
+                "()": "uvicorn.logging.AccessFormatter",
+                "fmt": "%(asctime)s - %(levelname)s - %(client_addr)s - \"%(request_line)s\" %(status_code)s",
+                "datefmt": "%Y-%m-%d %H:%M:%S",
+            },
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "stream": sys.stdout,
+                "formatter": "default",
+                "level": log_level,
+            },
+            "access_console": {
+                "class": "logging.StreamHandler",
+                "stream": sys.stdout,
+                "formatter": "access",
+                "level": log_level,
+            },
+        },
+        "loggers": {
+            # Uvicorn 自身日志（启动/错误）
+            "uvicorn": {"handlers": ["console"], "level": log_level, "propagate": False},
+            "uvicorn.error": {"handlers": ["console"], "level": log_level, "propagate": False},
+            # 访问日志（每个请求一条）
+            "uvicorn.access": {"handlers": ["access_console"], "level": log_level, "propagate": False},
+            # FastAPI / 应用日志
+            "fastapi": {"handlers": ["console"], "level": log_level, "propagate": False},
+        },
+        # 根日志器，兜底
+        "root": {"handlers": ["console"], "level": log_level},
+    })
+
+
+# 在导入模块后立即安装日志配置，确保尽早生效
+_install_logging_config()
 
 logger = logging.getLogger(__name__)
 
