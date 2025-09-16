@@ -41,7 +41,7 @@ async def lifespan(_: FastAPI):
 
 
 # 创建FastAPI应用实例
-app = FastAPI(
+App = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     docs_url=None,
@@ -49,14 +49,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Provide an alias for environments that expect `main:App`
-App = app
-
 # 包含API路由
-app.include_router(api_router, prefix="/api/v1")
+App.include_router(api_router, prefix="/api/v1")
 
 
-@app.get("/")
+@App.get("/")
 async def root():
     """根路径"""
     return {
@@ -69,7 +66,7 @@ if __name__ == '__main__':
     import uvicorn
 
     uvicorn.run(
-        'main:app',
+        'main:App',
         host=settings.HOST,
         port=settings.PORT,
         reload=settings.DEBUG
