@@ -110,7 +110,15 @@ class SubscribeStatistics(Base):
 
         # 如果提供了genre_id，则添加genre_ids过滤条件
         if genre_id is not None:
-            query = query.where(cls.genre_ids.like(f'%{genre_id}%'))
+            # 使用正确的分隔符匹配，避免部分数字匹配问题
+            query = query.where(
+                or_(
+                    cls.genre_ids == str(genre_id),  # 只有一个genre_id的情况
+                    cls.genre_ids.like(f'{genre_id},%'),  # 开头的genre_id
+                    cls.genre_ids.like(f'%,{genre_id},%'),  # 中间的genre_id
+                    cls.genre_ids.like(f'%,{genre_id}')  # 结尾的genre_id
+                )
+            )
 
         # 如果提供了评分范围，则添加评分过滤条件
         if min_rating is not None:
