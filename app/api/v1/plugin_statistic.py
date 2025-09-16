@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.deps import get_db
 from app.schemas.models import PluginStatisticList
-from app.services.plugin import PluginService
+from app.services.plugin_statistic import PluginService
 
 router = APIRouter()
 

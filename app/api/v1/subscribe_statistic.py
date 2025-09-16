@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.deps import get_db
 from app.schemas.models import SubscribeStatisticItem, SubscribeStatisticList, SortType
-from app.services.subscribe import SubscribeService
+from app.services.subscribe_statistic import SubscribeService
 
 router = APIRouter()
 

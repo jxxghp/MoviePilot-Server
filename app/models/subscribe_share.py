@@ -1,7 +1,7 @@
 """
 订阅分享模型
 """
-from sqlalchemy import Column, Integer, String, Float, or_, and_, func, select, delete, desc, asc
+from sqlalchemy import Column, Integer, String, Float, or_, and_, func, select, delete, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.base import Base, get_id_column

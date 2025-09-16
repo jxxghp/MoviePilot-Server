@@ -48,7 +48,7 @@ class SubscribeService:
 
         # 如果不存在则创建
         if not sub:
-            sub = SubscribeStatistics(**subscribe.dict(), count=1)
+            sub = SubscribeStatistics(**subscribe.model_dump(), count=1)
             await sub.create(db)
         # 如果存在则更新
         else:
