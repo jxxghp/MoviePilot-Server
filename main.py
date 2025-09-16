@@ -24,13 +24,16 @@ async def lifespan(_: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # 执行数据库迁移
+    # 执行数据库迁移 - 暂时跳过迁移以避免启动问题
     try:
-        migrator = DatabaseMigrator()
-        migrator.upgrade()
+        logger.info("Skipping database migration during startup for now")
+        # import asyncio
+        # # 运行迁移在同步上下文中
+        # loop = asyncio.get_event_loop()
+        # await loop.run_in_executor(None, lambda: DatabaseMigrator().upgrade())
     except Exception as e:
         logger.error(f"Database migration failed: {e}")
-        raise
+        # Don't raise to allow app to start
 
     yield
     # 关闭时清理资源

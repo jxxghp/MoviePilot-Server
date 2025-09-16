@@ -18,14 +18,17 @@ class DatabaseMigrator:
 
     def __init__(self):
         self.alembic_cfg = Config("alembic.ini")
-        # Update the database URL from settings
-        self.alembic_cfg.set_main_option("sqlalchemy.url", settings.database_url)
+        # Update the database URL from settings - convert to sync URL for Alembic
+        sync_url = settings.database_url.replace('+asyncpg', '').replace('+aiosqlite', '')
+        self.alembic_cfg.set_main_option("sqlalchemy.url", sync_url)
 
     @staticmethod
     def get_current_revision():
         """Get current database revision."""
         try:
-            engine = create_engine(settings.database_url)
+            # Convert async URL to sync URL for Alembic
+            sync_url = settings.database_url.replace('+asyncpg', '').replace('+aiosqlite', '')
+            engine = create_engine(sync_url)
             with engine.connect() as connection:
                 context = MigrationContext.configure(connection)
                 return context.get_current_revision()
