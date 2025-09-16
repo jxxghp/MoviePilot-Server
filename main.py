@@ -12,7 +12,6 @@ import asyncio
 from app.api.api import api_router
 from app.core.config import settings
 from app.db.database import engine
-from app.db.migrator import DatabaseMigrator
 from app.models import Base
 
 
@@ -84,19 +83,7 @@ async def lifespan(_: FastAPI):
     except Exception as e:
         logger.warning(f"Database init skipped due to error: {e}")
 
-    # 执行数据库迁移
-    try:
-        # 在后台执行迁移，不阻塞启动
-        async def run_migration_background():
-            loop = asyncio.get_event_loop()
-            try:
-                await loop.run_in_executor(None, lambda: DatabaseMigrator().upgrade())
-            except Exception as mig_err:
-                logger.error(f"Database migration failed: {mig_err}")
-
-        asyncio.create_task(run_migration_background())
-    except Exception as e:
-        logger.error(f"Scheduling migration failed: {e}")
+    # 迁移功能已移除
 
     yield
     # 关闭时清理资源
