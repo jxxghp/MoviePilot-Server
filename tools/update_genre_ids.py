@@ -27,8 +27,8 @@ from sqlalchemy import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import AsyncSessionLocal
-from app.models.subscribe_statistics import SubscribeStatistics
 from app.models.subscribe_share import SubscribeShare
+from app.models.subscribe_statistics import SubscribeStatistics
 from app.services.tmdb import tmdb_service
 
 

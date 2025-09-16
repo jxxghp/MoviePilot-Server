@@ -2,19 +2,14 @@
 FastAPI应用主文件
 """
 import logging
-import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-import asyncio
 
 from app.api.api import api_router
 from app.core.config import settings
 from app.db.database import engine
 from app.models import Base
-
-
- 
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +28,6 @@ async def lifespan(_: FastAPI):
             logger.info("Skipping database schema init at startup for PostgreSQL")
     except Exception as e:
         logger.warning(f"Database init skipped due to error: {e}")
-
-    # 迁移功能已移除
 
     yield
     # 关闭时清理资源
