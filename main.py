@@ -59,8 +59,8 @@ App = FastAPI(
     lifespan=lifespan
 )
 
-# 包含API路由
-App.include_router(api_router, prefix="/api/v1")
+# 包含API路由（去掉全局前缀，直接挂载到根路径）
+App.include_router(api_router)
 
 
 @App.get("/")
