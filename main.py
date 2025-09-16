@@ -5,6 +5,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+import asyncio
 
 from app.api.v1.api import api_router
 from app.core.config import settings
@@ -20,20 +21,29 @@ async def lifespan(_: FastAPI):
     """
     应用生命周期管理
     """
-    # 启动时初始化数据库
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # 启动时初始化数据库（SQLite 才执行，PostgreSQL 跳过以避免等待数据库就绪）
+    try:
+        if not settings.is_postgresql:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+        else:
+            logger.info("Skipping database schema init at startup for PostgreSQL")
+    except Exception as e:
+        logger.warning(f"Database init skipped due to error: {e}")
 
     # 执行数据库迁移
     try:
-        logger.info("Skipping database migration during startup for now")
-        import asyncio
-        # 运行迁移在同步上下文中
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: DatabaseMigrator().upgrade())
+        # 在后台执行迁移，不阻塞启动
+        async def run_migration_background():
+            loop = asyncio.get_event_loop()
+            try:
+                await loop.run_in_executor(None, lambda: DatabaseMigrator().upgrade())
+            except Exception as mig_err:
+                logger.error(f"Database migration failed: {mig_err}")
+
+        asyncio.create_task(run_migration_background())
     except Exception as e:
-        logger.error(f"Database migration failed: {e}")
-        # Don't raise to allow app to start
+        logger.error(f"Scheduling migration failed: {e}")
 
     yield
     # 关闭时清理资源
