@@ -8,7 +8,7 @@ from app.models import SubscribeShare
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache_manager
-from app.schemas.models import SubscribeShareItem
+from app.schemas.models import SubscribeShareItem, SortType
 from app.services.tmdb import tmdb_service
 
 
@@ -83,14 +83,14 @@ class SubscribeShareService:
 
     @staticmethod
     async def get_shares(db: AsyncSession, name: str = None, page: int = 1, count: int = 30, genre_id: int = None,
-                         min_rating: float = None, max_rating: float = None) -> List[Dict[str, Any]]:
+                         min_rating: float = None, max_rating: float = None, sort_type: SortType = SortType.TIME) -> List[Dict[str, Any]]:
         """查询分享的订阅"""
-        cache_key = f"subscribe_{name}_{page}_{count}_{genre_id}_{min_rating}_{max_rating}"
+        cache_key = f"subscribe_{name}_{page}_{count}_{genre_id}_{min_rating}_{max_rating}_{sort_type}"
         cached_data = cache_manager.share_cache.get(cache_key)
 
         if not cached_data:
             shares = await SubscribeShare.list(db, name=name, page=page, count=count, genre_id=genre_id,
-                                               min_rating=min_rating, max_rating=max_rating)
+                                               min_rating=min_rating, max_rating=max_rating, sort_type=sort_type)
             cached_data = [sha.dict() for sha in shares]
             cache_manager.share_cache.set(cache_key, cached_data)
 

@@ -1,10 +1,11 @@
 """
 订阅分享模型
 """
-from sqlalchemy import Column, Integer, String, Float, or_, and_, func, select, delete
+from sqlalchemy import Column, Integer, String, Float, or_, and_, func, select, delete, desc, asc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.base import Base, get_id_column
+from app.schemas.models import SortType
 
 
 class SubscribeShare(Base):
@@ -112,7 +113,7 @@ class SubscribeShare(Base):
 
     @classmethod
     async def list(cls, db: AsyncSession, name: str, page: int = 1, count: int = 30, genre_id: int = None,
-                   min_rating: float = None, max_rating: float = None):
+                   min_rating: float = None, max_rating: float = None, sort_type: SortType = SortType.TIME):
         if name:
             query = select(cls).where(
                 or_(
@@ -133,9 +134,19 @@ class SubscribeShare(Base):
         if max_rating is not None:
             query = query.where(cls.vote <= max_rating)
 
+        # 根据排序类型添加排序
+        if sort_type == SortType.TIME:
+            query = query.order_by(desc(cls.date))
+        elif sort_type == SortType.COUNT:
+            query = query.order_by(desc(cls.count))
+        elif sort_type == SortType.RATING:
+            query = query.order_by(desc(cls.vote))
+        else:
+            # 默认按时间倒序
+            query = query.order_by(desc(cls.date))
+
         result = await db.execute(
             query
-            .order_by(cls.date.desc())
             .offset((page - 1) * count)
             .limit(count)
         )

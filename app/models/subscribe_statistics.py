@@ -3,10 +3,11 @@
 """
 from typing import Union
 
-from sqlalchemy import Column, Integer, String, Float, or_, and_, select, delete
+from sqlalchemy import Column, Integer, String, Float, or_, and_, select, delete, desc, asc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.base import Base, get_id_column
+from app.schemas.models import SortType
 
 
 class SubscribeStatistics(Base):
@@ -104,7 +105,7 @@ class SubscribeStatistics(Base):
 
     @classmethod
     async def list(cls, db: AsyncSession, stype: str, page: int = 1, count: int = 30, genre_id: int = None,
-                   min_rating: float = None, max_rating: float = None):
+                   min_rating: float = None, max_rating: float = None, sort_type: SortType = SortType.COUNT):
         query = select(cls).where(cls.type == stype)
 
         # 如果提供了genre_id，则添加genre_ids过滤条件
@@ -117,9 +118,20 @@ class SubscribeStatistics(Base):
         if max_rating is not None:
             query = query.where(cls.vote <= max_rating)
 
+        # 根据排序类型添加排序
+        if sort_type == SortType.COUNT:
+            query = query.order_by(desc(cls.count))
+        elif sort_type == SortType.RATING:
+            query = query.order_by(desc(cls.vote))
+        elif sort_type == SortType.TIME:
+            # 订阅统计没有时间字段，按人数排序作为默认
+            query = query.order_by(desc(cls.count))
+        else:
+            # 默认按人数倒序
+            query = query.order_by(desc(cls.count))
+
         result = await db.execute(
             query
-            .order_by(cls.count.desc())
             .offset((page - 1) * count)
             .limit(count)
         )
