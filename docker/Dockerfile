@@ -10,4 +10,4 @@ WORKDIR ${WORKDIR}
 RUN pip3 install -r requirements.txt
 VOLUME ["/config"]
 EXPOSE 3001
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "3001"]
+CMD ["python3", "main.py"]
