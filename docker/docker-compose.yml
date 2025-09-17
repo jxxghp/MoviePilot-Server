@@ -86,18 +86,3 @@ services:
               published: 3000
               protocol: tcp
         restart: unless-stopped
-
-    moviepilot-miniapp:
-        image: 'jxxghp/moviepilot-miniapp:latest'
-        container_name: moviepilot-miniapp
-        environment:
-            - TELEGRAM_BOT_TOKEN='8497254084:AAHx6GqIOSMDSntYKDhwXJx8XFO4Tnamw_o'
-            - WEBAPP_URL='https://movie-pilot.org/miniapp/'
-            - API_BASE_URL='https://movie-pilot.org'
-        volumes:
-            - '/app/config:/config'
-        ports:
-            - target: 80
-              published: 8000
-              protocol: tcp
-        restart: always
