@@ -23,7 +23,7 @@ class TMDBService:
                 if response.status == 200:
                     return await response.json()
                 else:
-                    print(f"TMDB API请求失败: {response.status}")
+                    print(f"TMDB API请求失败: {response.status} {url}")
                     return None
         except Exception as e:
             print(f"TMDB API请求异常: {e}")
