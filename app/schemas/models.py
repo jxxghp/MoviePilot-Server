@@ -17,6 +17,7 @@ class SortType(str, Enum):
 class PluginStatisticItem(BaseModel):
     """插件统计项"""
     plugin_id: str
+    repo_url: Optional[str] = None
 
 
 class PluginStatisticList(BaseModel):
