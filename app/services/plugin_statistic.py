@@ -41,18 +41,16 @@ class PluginService:
         return {"code": 0, "message": "success"}
 
     @staticmethod
-    async def get_statistics(db: AsyncSession) -> List[Dict[str, Any]]:
-        """查询插件安装统计，包含仓库地址"""
+    async def get_statistics(db: AsyncSession) -> Dict[str, int]:
+        """查询插件安装统计"""
         cache_key = 'plugin'
         cached_data = cache_manager.statistic_cache.get(cache_key)
 
         if not cached_data:
             statistics = await PluginStatistics.list(db)
-            # Normalize to list of dicts
-            cached_data = [
-                {"plugin_id": sta.plugin_id, "count": sta.count, "repo_url": getattr(sta, "repo_url", None)}
-                for sta in statistics
-            ]
+            cached_data = {
+                sta.plugin_id: sta.count for sta in statistics
+            }
             cache_manager.statistic_cache.set(cache_key, cached_data)
 
         return cached_data

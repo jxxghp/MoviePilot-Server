@@ -39,6 +39,6 @@ async def plugin_batch_install(plugins: PluginStatisticList, db: AsyncSession = 
 @router.get("/statistic")
 async def plugin_statistic(db: AsyncSession = Depends(get_db)):
     """
-    查询插件安装统计，包含repo_url
+    查询插件安装统计
     """
     return await PluginService.get_statistics(db)
