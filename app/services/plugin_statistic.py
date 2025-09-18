@@ -15,7 +15,6 @@ class PluginService:
     @staticmethod
     async def install_plugin(db: AsyncSession, plugin_id: str, repo_url: str | None = None) -> Dict[str, Any]:
         """安装插件计数，并可更新仓库地址"""
-        await PluginStatistics.ensure_repo_url_column(db)
         # 查询数据库中是否存在
         plugin = await PluginStatistics.read(db, plugin_id)
 
@@ -35,7 +34,6 @@ class PluginService:
     @staticmethod
     async def batch_install_plugins(db: AsyncSession, plugins: List[Any]) -> Dict[str, Any]:
         """批量安装插件计数"""
-        await PluginStatistics.ensure_repo_url_column(db)
         for plugin in plugins:
             # plugin is Pydantic item with attributes
             await PluginService.install_plugin(db, plugin.plugin_id, getattr(plugin, "repo_url", None))
@@ -49,7 +47,6 @@ class PluginService:
         cached_data = cache_manager.statistic_cache.get(cache_key)
 
         if not cached_data:
-            await PluginStatistics.ensure_repo_url_column(db)
             statistics = await PluginStatistics.list(db)
             # Normalize to list of dicts
             cached_data = [
