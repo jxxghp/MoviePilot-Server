@@ -15,8 +15,8 @@ class PluginService:
     @staticmethod
     async def install_plugin(db: AsyncSession, plugin_id: str, repo_url: str | None = None) -> Dict[str, Any]:
         """安装插件计数，并可更新仓库地址"""
-        # 查询数据库中是否存在
-        plugin = await PluginStatistics.read(db, plugin_id)
+        # 查询数据库中是否存在；当存在大小写两条记录时优先更新驼峰记录
+        plugin = await PluginStatistics.read_prefer_camel(db, plugin_id)
 
         # 如果不存在则创建
         if not plugin:
