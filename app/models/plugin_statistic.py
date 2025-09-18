@@ -16,6 +16,7 @@ class PluginStatistics(Base):
     id = get_id_column()
     plugin_id = Column(String, unique=True, index=True)
     count = Column(Integer)
+    repo_url = Column(String, nullable=True)
 
     async def create(self, db: AsyncSession):
         db.add(self)
@@ -46,9 +47,9 @@ class PluginStatistics(Base):
     @classmethod
     async def list(cls, db: AsyncSession):
         result = await db.execute(
-            select(cls.plugin_id, cls.count)
+            select(cls)
         )
-        return result.all()
+        return result.scalars().all()
 
     def dict(self):
         return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}
