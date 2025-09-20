@@ -103,6 +103,23 @@ class SubscribeShareStatisticItem(BaseModel):
     total_reuse_count: int
 
 
+class SiteCategoryModel(BaseModel):
+    """站点分类模型"""
+    id: int
+    name: str
+    name_en: str
+
+
+class SiteConfigModel(BaseModel):
+    """站点配置模型"""
+    name: str
+    url: str
+    type: str
+    categories: List[SiteCategoryModel]
+    enabled: bool = True
+    description: Optional[str] = None
+
+
 class ResponseModel(BaseModel):
     """通用响应模型"""
     code: int
