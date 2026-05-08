@@ -2,6 +2,7 @@
 TheMovieDB API服务
 """
 from typing import Dict, Any, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import aiohttp
 
@@ -16,6 +17,31 @@ class TMDBService:
         self.base_url = settings.TMDB_API_URL
         self.timeout = settings.TMDB_TIMEOUT
 
+    @staticmethod
+    def _normalize_media_type(media_type: Optional[str]) -> str:
+        """统一媒体类型，兼容中文和英文类型值。"""
+        if not media_type:
+            return "movie"
+
+        normalized = str(media_type).strip().lower()
+        if normalized in {"movie", "电影"}:
+            return "movie"
+        if normalized in {"tv", "电视剧"}:
+            return "tv"
+        return "movie"
+
+    @staticmethod
+    def _sanitize_url(url: str) -> str:
+        """隐藏日志中的敏感查询参数。"""
+        parts = urlsplit(url)
+        query = []
+        for key, value in parse_qsl(parts.query, keep_blank_values=True):
+            if key == "api_key":
+                query.append((key, "***"))
+            else:
+                query.append((key, value))
+        return urlunsplit(parts._replace(query=urlencode(query, safe="*")))
+
     async def _make_request(self, session: aiohttp.ClientSession, url: str) -> Optional[Dict[str, Any]]:
         """发起API请求"""
         try:
@@ -23,7 +49,7 @@ class TMDBService:
                 if response.status == 200:
                     return await response.json()
                 else:
-                    print(f"TMDB API请求失败: {response.status} {url}")
+                    print(f"TMDB API请求失败: {response.status} {self._sanitize_url(url)}")
                     return None
         except Exception as e:
             print(f"TMDB API请求异常: {e}")
@@ -51,7 +77,8 @@ class TMDBService:
 
     async def get_media_details(self, tmdb_id: int, media_type: str = "movie") -> Optional[Dict[str, Any]]:
         """获取媒体详情（电影或电视剧）"""
-        if media_type.lower() == "tv":
+        normalized_type = self._normalize_media_type(media_type)
+        if normalized_type == "tv":
             return await self.get_tv_details(tmdb_id)
         else:
             return await self.get_movie_details(tmdb_id)
