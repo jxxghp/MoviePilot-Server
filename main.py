@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.db.database import engine
 from app.db.redis import close_redis, init_redis
 from app.models import Base
+from app.services.data_cleanup import data_cleanup_service
 from app.services.media_recognize_share import media_recognize_share_service
 
 logger = logging.getLogger(__name__)
@@ -34,9 +35,11 @@ async def lifespan(_: FastAPI):
     # 初始化Redis并启动共享识别缓存服务。
     await init_redis()
     await media_recognize_share_service.start()
+    await data_cleanup_service.start()
 
     yield
     # 关闭时清理资源
+    await data_cleanup_service.stop()
     await media_recognize_share_service.stop()
     await close_redis()
     await engine.dispose()

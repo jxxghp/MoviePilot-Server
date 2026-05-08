@@ -17,6 +17,7 @@ class PluginStatistics(Base):
     plugin_id = Column(String, unique=True, index=True)
     count = Column(Integer)
     repo_url = Column(String, nullable=True)
+    date = Column(String, nullable=True, index=True)
 
     async def create(self, db: AsyncSession):
         db.add(self)

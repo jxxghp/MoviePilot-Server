@@ -1,6 +1,7 @@
 """
 插件统计服务
 """
+from datetime import datetime
 from typing import Dict, Any, List
 
 from app.models import PluginStatistics
@@ -17,14 +18,15 @@ class PluginService:
         """安装插件计数，并可更新仓库地址"""
         # 查询数据库中是否存在；当存在大小写两条记录时优先更新驼峰记录
         plugin = await PluginStatistics.read_prefer_camel(db, plugin_id)
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # 如果不存在则创建
         if not plugin:
-            plugin = PluginStatistics(plugin_id=plugin_id, count=1, repo_url=repo_url)
+            plugin = PluginStatistics(plugin_id=plugin_id, count=1, repo_url=repo_url, date=now)
             await plugin.create(db)
         # 如果存在则更新
         else:
-            payload = {"count": plugin.count + 1}
+            payload = {"count": plugin.count + 1, "date": now}
             if repo_url:
                 payload["repo_url"] = repo_url
             await plugin.update(db, payload)
