@@ -68,7 +68,7 @@ class DataCleanupService:
         计算下一个本地凌晨时间。
         """
         now = datetime.now()
-        return (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        return (now + timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
 
     async def cleanup_once(self):
         """
