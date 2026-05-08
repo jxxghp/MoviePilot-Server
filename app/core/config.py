@@ -1,6 +1,8 @@
 """
 应用配置管理
 """
+from urllib.parse import quote
+
 from pydantic_settings import BaseSettings
 
 
@@ -10,6 +12,19 @@ class Settings(BaseSettings):
     # 数据库配置
     DATABASE_TYPE: str = "sqlite"
     CONFIG_DIR: str = "."
+
+    # Redis配置
+    REDIS_URL: str = ""
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_USERNAME: str = ""
+    REDIS_PASSWORD: str = ""
+    REDIS_SSL: bool = False
+    REDIS_MAX_CONNECTIONS: int = 50
+    REDIS_CONNECT_TIMEOUT: int = 5
+    REDIS_SOCKET_TIMEOUT: int = 5
+    REDIS_KEY_PREFIX: str = "moviepilot"
 
     # PostgreSQL配置
     DB_HOST: str = "localhost"
@@ -53,6 +68,28 @@ class Settings(BaseSettings):
     def is_postgresql(self) -> bool:
         """判断是否使用PostgreSQL"""
         return self.DATABASE_TYPE.lower() == 'postgresql'
+
+    @property
+    def redis_url(self) -> str:
+        """获取Redis连接URL"""
+        if self.REDIS_URL:
+            return self.REDIS_URL
+
+        protocol = "rediss" if self.REDIS_SSL else "redis"
+        auth = ""
+        if self.REDIS_USERNAME and self.REDIS_PASSWORD:
+            auth = f"{quote(self.REDIS_USERNAME, safe='')}:{quote(self.REDIS_PASSWORD, safe='')}@"
+        elif self.REDIS_PASSWORD:
+            auth = f":{quote(self.REDIS_PASSWORD, safe='')}@"
+        elif self.REDIS_USERNAME:
+            auth = f"{quote(self.REDIS_USERNAME, safe='')}@"
+
+        return f"{protocol}://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+
+    @property
+    def media_recognize_share_redis_prefix(self) -> str:
+        """共享识别缓存Redis前缀"""
+        return f"{self.REDIS_KEY_PREFIX}:media_recognize_share"
 
 
 # 全局配置实例

@@ -103,6 +103,20 @@ class SubscribeShareStatisticItem(BaseModel):
     total_reuse_count: int
 
 
+class MediaRecognizeShareItem(BaseModel):
+    """共享媒体识别项"""
+    keyword: str
+    type: str
+    year: Optional[str] = None
+    season: Optional[int] = None
+    tmdbid: Optional[int] = None
+    doubanid: Optional[str] = None
+    bangumiid: Optional[int] = None
+    title: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
 class ResponseModel(BaseModel):
     """通用响应模型"""
     code: int

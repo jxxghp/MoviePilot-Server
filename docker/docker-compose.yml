@@ -17,6 +17,31 @@ services:
               protocol: tcp
         restart: always
 
+    redis:
+        image: 'redis:7-alpine'
+        container_name: moviepilot-redis
+        environment:
+            - REDIS_PASSWORD=${REDIS_PASSWORD:-moviepilot_redis_password}
+        command:
+            [
+                "redis-server",
+                "--requirepass", "${REDIS_PASSWORD:-moviepilot_redis_password}",
+                "--appendonly", "yes",
+                "--appendfsync", "everysec",
+                "--save", "900", "1",
+                "--save", "300", "10",
+                "--save", "60", "10000",
+                "--maxmemory", "10gb",
+                "--maxmemory-policy", "allkeys-lru"
+            ]
+        ports:
+            - target: 6379
+              published: 6380
+              protocol: tcp
+        volumes:
+            - '/root/redis:/data'
+        restart: always
+
     moviepilot-server:
         image: 'jxxghp/moviepilot-server:latest'
         container_name: moviepilot-server
@@ -28,6 +53,10 @@ services:
             - DB_USER=postgres
             - DB_PASSWORD=postgres
             - CONFIG_DIR=/config
+            - REDIS_HOST=localhost
+            - REDIS_PORT=6380
+            - REDIS_DB=0
+            - REDIS_PASSWORD=${REDIS_PASSWORD:-moviepilot_redis_password}
         ports:
             - target: 3001
               published: 3001
@@ -36,6 +65,7 @@ services:
             - '/root/moviepilot:/config'
         depends_on:
             - postgres
+            - redis
         restart: always
 
     cookiecloud:
@@ -49,19 +79,6 @@ services:
               protocol: tcp
         volumes:
             - '/mnt/cookiecloud:/data/api/data'
-        restart: always
-
-    etherpad:
-        image: 'etherpad/etherpad:latest'
-        container_name: etherpad
-        ports:
-            - target: 9001
-              published: 9009
-              protocol: tcp
-        volumes:
-            - '/root/etherpad:/opt/etherpad-lite/var'
-        environment:
-            - 'ADMIN_PASSWORD='
         restart: always
 
     ocr:

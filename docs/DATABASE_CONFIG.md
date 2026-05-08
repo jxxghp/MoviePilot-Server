@@ -6,6 +6,8 @@
 - **SQLite** (默认)
 - **PostgreSQL**
 
+共享媒体识别缓存使用 **Redis** 存储，与主数据库类型无关，需要单独配置。
+
 ## 环境变量配置
 
 ### 数据库类型切换
@@ -66,3 +68,41 @@ moviepilot-server:
     - DATABASE_TYPE=sqlite
     - CONFIG_DIR=/config
 ```
+
+## Redis 配置
+
+共享媒体识别接口 `/recognize/share` 依赖 Redis 存储海量缓存数据。
+
+### 最简配置
+
+```bash
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+REDIS_PASSWORD=your-strong-password
+```
+
+### 完整配置
+
+```bash
+REDIS_URL=
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+REDIS_USERNAME=
+REDIS_PASSWORD=
+REDIS_SSL=false
+REDIS_MAX_CONNECTIONS=50
+REDIS_CONNECT_TIMEOUT=5
+REDIS_SOCKET_TIMEOUT=5
+REDIS_KEY_PREFIX=moviepilot
+```
+
+说明：
+- 优先使用 `REDIS_URL`，设置后会覆盖 `REDIS_HOST`/`REDIS_PORT` 等拆分配置。
+- Redis 启用密码后，需要同时为服务端和应用端配置同一个 `REDIS_PASSWORD`。
+- 共享识别缓存键会写入 `${REDIS_KEY_PREFIX}:media_recognize_share:*` 命名空间。
+- 默认 `docker/docker-compose.yml` 已开启 AOF + RDB 持久化，并将数据目录挂载到 `/root/redis`。
+- 默认 `docker/docker-compose.yml` 已设置 `maxmemory 10gb`，淘汰策略为 `allkeys-lru`。
+- 默认 `docker/docker-compose.yml` 会使用 `REDIS_PASSWORD` 环境变量；未设置时会回退到示例密码 `moviepilot_redis_password`，建议部署时覆盖。
+- 应用启动时会初始化 Redis，连接失败会导致启动失败。

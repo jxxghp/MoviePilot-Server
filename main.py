@@ -9,7 +9,9 @@ from fastapi import FastAPI
 from app.api.api import api_router
 from app.core.config import settings
 from app.db.database import engine
+from app.db.redis import close_redis, init_redis
 from app.models import Base
+from app.services.media_recognize_share import media_recognize_share_service
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +31,14 @@ async def lifespan(_: FastAPI):
     except Exception as e:
         logger.warning(f"Database init skipped due to error: {e}")
 
+    # 初始化Redis并启动共享识别缓存服务。
+    await init_redis()
+    await media_recognize_share_service.start()
+
     yield
     # 关闭时清理资源
+    await media_recognize_share_service.stop()
+    await close_redis()
     await engine.dispose()
 
 
