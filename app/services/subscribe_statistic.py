@@ -17,27 +17,31 @@ class SubscribeService:
     @staticmethod
     async def add_subscribe(db: AsyncSession, subscribe: SubscribeStatisticItem) -> Dict[str, Any]:
         """添加订阅统计"""
-        # 如果没有genre_ids但有tmdbid，则查询TheMovieDB获取
-        if not subscribe.genre_ids and subscribe.tmdbid and subscribe.type:
+        # 如果没有tmdbid或类型则直接拒绝不统计
+        if not subscribe.tmdbid or not subscribe.type:
+            return {"code": 1, "message": "缺少tmdbid"}
+        # 如果没有genre_ids，则查询TheMovieDB获取
+        if not subscribe.genre_ids:
             try:
                 tmdb_info = await tmdb_service.get_media_info(subscribe.tmdbid, subscribe.type)
-                if tmdb_info and tmdb_info.get("genre_ids"):
-                    subscribe.genre_ids = tmdb_info["genre_ids"]
-                    # 同时更新其他可能缺失的信息
-                    if not subscribe.name and tmdb_info.get("name"):
-                        subscribe.name = tmdb_info["name"]
-                    if not subscribe.year and tmdb_info.get("year"):
-                        subscribe.year = tmdb_info["year"]
-                    if not subscribe.poster and tmdb_info.get("poster"):
-                        subscribe.poster = tmdb_info["poster"]
-                    if not subscribe.backdrop and tmdb_info.get("backdrop"):
-                        subscribe.backdrop = tmdb_info["backdrop"]
-                    if not subscribe.vote and tmdb_info.get("vote"):
-                        subscribe.vote = tmdb_info["vote"]
-                    if not subscribe.description and tmdb_info.get("description"):
-                        subscribe.description = tmdb_info["description"]
+                if not tmdb_info or not tmdb_info.get("genre_ids"):
+                    return {"code": 1, "message": "无法获取媒体类型或分类信息"}
+                # 更新信息
+                subscribe.genre_ids = tmdb_info["genre_ids"]
+                if not subscribe.name and tmdb_info.get("name"):
+                    subscribe.name = tmdb_info["name"]
+                if not subscribe.year and tmdb_info.get("year"):
+                    subscribe.year = tmdb_info["year"]
+                if not subscribe.poster and tmdb_info.get("poster"):
+                    subscribe.poster = tmdb_info["poster"]
+                if not subscribe.backdrop and tmdb_info.get("backdrop"):
+                    subscribe.backdrop = tmdb_info["backdrop"]
+                if not subscribe.vote and tmdb_info.get("vote"):
+                    subscribe.vote = tmdb_info["vote"]
+                if not subscribe.description and tmdb_info.get("description"):
+                    subscribe.description = tmdb_info["description"]
             except Exception as e:
-                print(f"查询TheMovieDB失败: {e}")
+                return {"code": 1, "message": f"获取媒体信息失败: {str(e)}"}
 
         # 查询数据库中是否存在
         sub = await SubscribeStatistics.read(
