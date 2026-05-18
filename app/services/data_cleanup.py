@@ -2,15 +2,18 @@
 每日数据清理服务
 """
 import asyncio
-import logging
 from datetime import datetime, timedelta
+import logging
 from typing import Optional
+from uuid import uuid4
 
 from sqlalchemy import and_, delete, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache_manager
+from app.core.config import settings
 from app.db.database import AsyncSessionLocal
+from app.db.redis import get_redis
 from app.models import PluginStatistics, SubscribeShare, SubscribeStatistics
 
 logger = logging.getLogger(__name__)
@@ -20,6 +23,8 @@ class DataCleanupService:
     """
     每天凌晨清理历史脏数据。
     """
+
+    _LOCK_TTL_SECONDS = 6 * 60 * 60
 
     def __init__(self):
         self._task: Optional[asyncio.Task] = None
@@ -79,8 +84,14 @@ class DataCleanupService:
         plugin_deleted = 0
         share_deleted = 0
         subscribe_deleted = 0
+        lock_token: Optional[str] = None
 
         try:
+            lock_token = await self._acquire_cleanup_lock()
+            if not lock_token:
+                logger.info("Daily data cleanup skipped because another worker is running it")
+                return
+
             async with AsyncSessionLocal() as db:
                 try:
                     plugin_deleted = await self._cleanup_plugin_statistics(db, plugin_cutoff)
@@ -106,6 +117,44 @@ class DataCleanupService:
             raise
         except Exception as err:
             logger.exception("Daily data cleanup failed: %s", err)
+        finally:
+            if lock_token:
+                await self._release_cleanup_lock(lock_token)
+
+    @staticmethod
+    def _cleanup_lock_key() -> str:
+        """
+        获取多进程清理任务锁键。
+        """
+        return f"{settings.REDIS_KEY_PREFIX}:data_cleanup:lock"
+
+    async def _acquire_cleanup_lock(self) -> Optional[str]:
+        """
+        获取清理任务分布式锁。
+        """
+        lock_token = str(uuid4())
+        acquired = await get_redis().set(
+            self._cleanup_lock_key(),
+            lock_token,
+            ex=self._LOCK_TTL_SECONDS,
+            nx=True,
+        )
+        return lock_token if acquired else None
+
+    async def _release_cleanup_lock(self, lock_token: str):
+        """
+        释放当前 worker 持有的清理任务分布式锁。
+        """
+        release_script = """
+        if redis.call("get", KEYS[1]) == ARGV[1] then
+            return redis.call("del", KEYS[1])
+        end
+        return 0
+        """
+        try:
+            await get_redis().eval(release_script, 1, self._cleanup_lock_key(), lock_token)
+        except Exception as err:
+            logger.warning("Daily data cleanup lock release failed: %s", err)
 
     @staticmethod
     async def _cleanup_plugin_statistics(db: AsyncSession, plugin_cutoff: str) -> int:

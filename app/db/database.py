@@ -14,10 +14,10 @@ def create_engine() -> AsyncEngine:
             settings.database_url,
             echo=settings.DEBUG,
             pool_pre_ping=True,
-            pool_size=20,
-            max_overflow=10,
-            pool_recycle=3600,
-            pool_timeout=180,
+            pool_size=settings.DB_POOL_SIZE,
+            max_overflow=settings.DB_MAX_OVERFLOW,
+            pool_recycle=settings.DB_POOL_RECYCLE,
+            pool_timeout=settings.DB_POOL_TIMEOUT,
         )
     else:
         # SQLite引擎配置

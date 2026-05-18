@@ -1,6 +1,7 @@
 """
 应用配置管理
 """
+import os
 from urllib.parse import quote
 
 from pydantic_settings import BaseSettings
@@ -32,6 +33,10 @@ class Settings(BaseSettings):
     DB_NAME: str = "moviepilot"
     DB_USER: str = "postgres"
     DB_PASSWORD: str = "postgres"
+    DB_POOL_SIZE: int = 15
+    DB_MAX_OVERFLOW: int = 5
+    DB_POOL_TIMEOUT: int = 180
+    DB_POOL_RECYCLE: int = 3600
 
     # 应用配置
     APP_NAME: str = "MoviePilot Server"
@@ -41,6 +46,11 @@ class Settings(BaseSettings):
     # 服务器配置
     HOST: str = "0.0.0.0"
     PORT: int = 3001
+    SERVER_WORKERS: int = 0
+    WEB_CONCURRENCY: int = 0
+    SERVER_BACKLOG: int = 4096
+    SERVER_LIMIT_CONCURRENCY: int = 0
+    SERVER_TIMEOUT_KEEP_ALIVE: int = 5
 
     # TheMovieDB API配置
     TMDB_API_KEY: str = "db55323b8d3e4154498498a75642b381"
@@ -68,6 +78,34 @@ class Settings(BaseSettings):
     def is_postgresql(self) -> bool:
         """判断是否使用PostgreSQL"""
         return self.DATABASE_TYPE.lower() == 'postgresql'
+
+    @staticmethod
+    def _detect_cpu_count() -> int:
+        """获取当前运行环境可见的CPU核心数。"""
+        if hasattr(os, "sched_getaffinity"):
+            try:
+                return max(len(os.sched_getaffinity(0)), 1)
+            except Exception:
+                pass
+        return max(os.cpu_count() or 1, 1)
+
+    @property
+    def server_workers(self) -> int:
+        """获取Uvicorn worker数量。"""
+        if self.DEBUG:
+            return 1
+        if self.SERVER_WORKERS > 0:
+            return self.SERVER_WORKERS
+        if self.WEB_CONCURRENCY > 0:
+            return self.WEB_CONCURRENCY
+        return min(self._detect_cpu_count(), 4)
+
+    @property
+    def server_limit_concurrency(self) -> int | None:
+        """获取Uvicorn单worker并发上限。"""
+        if self.SERVER_LIMIT_CONCURRENCY > 0:
+            return self.SERVER_LIMIT_CONCURRENCY
+        return None
 
     @property
     def redis_url(self) -> str:

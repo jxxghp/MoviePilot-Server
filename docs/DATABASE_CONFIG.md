@@ -44,6 +44,30 @@ DB_USER=postgres      # 数据库用户名
 DB_PASSWORD=postgres  # 数据库密码
 ```
 
+连接池默认按每个 worker 独立创建，4 个 worker 时默认最多使用 `4 * (DB_POOL_SIZE + DB_MAX_OVERFLOW)` 个 PostgreSQL 连接。当前默认值适合 4 核机器上几千个客户端连接的常见 API 场景，总上限为 80 个数据库连接：
+
+```bash
+DB_POOL_SIZE=15      # 每个 worker 常驻连接数
+DB_MAX_OVERFLOW=5    # 每个 worker 临时溢出连接数
+DB_POOL_TIMEOUT=180
+DB_POOL_RECYCLE=3600
+```
+
+## 服务启动配置
+
+生产环境默认会按当前运行环境可见 CPU 核心数启动多个 Uvicorn worker，最多自动使用 4 个 worker。`DEBUG=true` 时固定为 1 个 worker，避免热重载和多进程冲突。
+
+```bash
+SERVER_WORKERS=4     # 优先使用
+WEB_CONCURRENCY=4    # 兼容常见部署平台变量
+SERVER_BACKLOG=4096
+SERVER_LIMIT_CONCURRENCY=0
+SERVER_TIMEOUT_KEEP_ALIVE=5
+```
+
+如果 PostgreSQL 的 `max_connections` 较小，需要同时降低 `SERVER_WORKERS`、`DB_POOL_SIZE` 或 `DB_MAX_OVERFLOW`。
+`SERVER_LIMIT_CONCURRENCY=0` 表示不主动限制单 worker 并发；接口延迟升高或数据库连接等待明显时，可以设置为 500-1000 做应用层排队保护。
+
 ## Docker 部署
 
 ### 使用 PostgreSQL

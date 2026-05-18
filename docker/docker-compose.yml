@@ -52,11 +52,15 @@ services:
             - DB_NAME=moviepilot
             - DB_USER=postgres
             - DB_PASSWORD=postgres
+            - DB_POOL_SIZE=15
+            - DB_MAX_OVERFLOW=5
             - CONFIG_DIR=/config
             - REDIS_HOST=localhost
             - REDIS_PORT=6380
             - REDIS_DB=0
             - REDIS_PASSWORD=${REDIS_PASSWORD:-moviepilot_redis_password}
+            - SERVER_WORKERS=4
+            - SERVER_BACKLOG=4096
         ports:
             - target: 3001
               published: 3001

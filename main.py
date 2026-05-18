@@ -74,5 +74,9 @@ if __name__ == '__main__':
         'main:App',
         host=settings.HOST,
         port=settings.PORT,
-        reload=settings.DEBUG
+        reload=settings.DEBUG,
+        workers=settings.server_workers,
+        backlog=settings.SERVER_BACKLOG,
+        limit_concurrency=settings.server_limit_concurrency,
+        timeout_keep_alive=settings.SERVER_TIMEOUT_KEEP_ALIVE
     )
