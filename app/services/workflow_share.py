@@ -64,7 +64,7 @@ class WorkflowShareService:
         cache_key = f"workflow_{name}_{page}_{count}"
         cached_data = cache_manager.workflow_share_cache.get(cache_key)
 
-        if not cached_data:
+        if cached_data is None:
             shares = await WorkflowShare.list(db, name=name, page=page, count=count)
             cached_data = [sha.dict() for sha in shares]
             cache_manager.workflow_share_cache.set(cache_key, cached_data)
@@ -74,11 +74,7 @@ class WorkflowShareService:
     @staticmethod
     async def fork_share(db: AsyncSession, share_id: int) -> Dict[str, Any]:
         """复用分享的工作流"""
-        # 查询数据库中是否存在
-        share = await WorkflowShare.read_by_id(db, sid=share_id)
-
-        # 如果存在则更新
-        if share:
-            await share.update(db, {"count": share.count + 1})
+        await WorkflowShare.increment_count_by_id(db, sid=share_id)
+        await db.commit()
 
         return {"code": 0, "message": "success"}

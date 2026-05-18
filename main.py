@@ -13,6 +13,7 @@ from app.db.redis import close_redis, init_redis
 from app.models import Base
 from app.services.data_cleanup import data_cleanup_service
 from app.services.media_recognize_share import media_recognize_share_service
+from app.services.tmdb import tmdb_service
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ async def lifespan(_: FastAPI):
     # 关闭时清理资源
     await data_cleanup_service.stop()
     await media_recognize_share_service.stop()
+    await tmdb_service.close()
     await close_redis()
     await engine.dispose()
 

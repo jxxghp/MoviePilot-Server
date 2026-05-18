@@ -29,9 +29,24 @@ class MediaRecognizeShareService:
         """共享识别项存储键"""
         return f"{self._cache_namespace}:item:{cache_key}"
 
-    def _keyword_index_key(self, keyword_key: str) -> str:
-        """关键字索引键"""
-        return f"{self._cache_namespace}:index:keyword:{keyword_key}"
+    @classmethod
+    def _build_item_cache_key(
+            cls,
+            keyword: Optional[str],
+            media_type: Optional[str],
+            year: Optional[str] = None,
+            season: Optional[int] = None,
+    ) -> Optional[str]:
+        """
+        构造共享识别项的Redis缓存键。
+        """
+        cache_key = cls._build_cache_key(
+            keyword=keyword,
+            media_type=media_type,
+            year=year,
+            season=season,
+        )
+        return cache_key
 
     @staticmethod
     def _normalize_keyword(keyword: Optional[str]) -> str:
@@ -184,31 +199,6 @@ class MediaRecognizeShareService:
                 merged[key] = value
         return merged
 
-    @classmethod
-    def _match_item(
-            cls,
-            item: dict[str, Any],
-            keyword_key: str,
-            media_type: Optional[str],
-            year: Optional[str],
-            season: Optional[int],
-    ) -> bool:
-        """
-        判断共享识别项是否匹配查询条件
-        """
-        item_type = cls._normalize_media_type(item.get("type"))
-        if cls._normalize_keyword(item.get("keyword")) != keyword_key:
-            return False
-        if media_type and item_type != media_type:
-            return False
-        if year and cls._normalize_year(item.get("year")) != year:
-            return False
-        if season is not None:
-            item_season = cls._normalize_season(item_type, item.get("season"))
-            if item_season != cls._normalize_season(item_type, season):
-                return False
-        return True
-
     async def _get_item(self, cache_key: Optional[str]) -> Optional[dict[str, Any]]:
         """
         按缓存键读取共享识别项
@@ -218,39 +208,6 @@ class MediaRecognizeShareService:
 
         raw_item = await get_redis().get(self._item_key(cache_key))
         return self._deserialize_item(raw_item)
-
-    async def _get_keyword_candidates(self, keyword_key: str) -> list[dict[str, Any]]:
-        """
-        读取同一关键字下的候选共享识别项
-        """
-        redis = get_redis()
-        index_key = self._keyword_index_key(keyword_key)
-        cache_keys = await redis.smembers(index_key)
-        if not cache_keys:
-            return []
-
-        ordered_cache_keys = sorted(cache_keys)
-        raw_items = await redis.mget(
-            [self._item_key(cache_key) for cache_key in ordered_cache_keys]
-        )
-
-        items: list[dict[str, Any]] = []
-        stale_cache_keys: list[str] = []
-        for cache_key, raw_item in zip(ordered_cache_keys, raw_items):
-            if raw_item is None:
-                stale_cache_keys.append(cache_key)
-                continue
-
-            item = self._deserialize_item(raw_item)
-            if item:
-                items.append(item)
-            else:
-                stale_cache_keys.append(cache_key)
-
-        if stale_cache_keys:
-            await redis.srem(index_key, *stale_cache_keys)
-
-        return items
 
     async def upsert(self, item: MediaRecognizeShareItem) -> dict[str, Any]:
         """
@@ -269,8 +226,7 @@ class MediaRecognizeShareService:
         ):
             return {"code": 1, "message": "至少需要一个有效的媒体ID"}
 
-        keyword_key = self._normalize_keyword(normalized_item.get("keyword"))
-        cache_key = self._build_cache_key(
+        cache_key = self._build_item_cache_key(
             keyword=normalized_item.get("keyword"),
             media_type=normalized_item.get("type"),
             year=normalized_item.get("year"),
@@ -286,10 +242,7 @@ class MediaRecognizeShareService:
         normalized_item["updated_at"] = now
         merged_item = self._merge_item(existing, normalized_item)
 
-        pipe = redis.pipeline()
-        pipe.set(self._item_key(cache_key), self._serialize_item(merged_item))
-        pipe.sadd(self._keyword_index_key(keyword_key), cache_key)
-        await pipe.execute()
+        await redis.set(self._item_key(cache_key), self._serialize_item(merged_item))
 
         return {
             "code": 0,
@@ -312,44 +265,25 @@ class MediaRecognizeShareService:
             return {"code": 1, "message": "关键字不能为空"}
 
         type_key = self._normalize_media_type(media_type)
+        if not type_key:
+            return {"code": 1, "message": "媒体类型不能为空"}
+
         year_key = self._normalize_year(year)
-        season_key = self._normalize_season(type_key, season) if type_key else None
-
-        if type_key:
-            exact_key = self._build_cache_key(
-                keyword=keyword,
-                media_type=type_key,
-                year=year_key,
-                season=season_key,
-            )
-            item = await self._get_item(exact_key)
-            if item:
-                return {
-                    "code": 0,
-                    "message": "success",
-                    "data": {"item": item},
-                }
-
-        candidates = [
-            item
-            for item in await self._get_keyword_candidates(keyword_key)
-            if self._match_item(
-                item=item,
-                keyword_key=keyword_key,
-                media_type=type_key,
-                year=year_key,
-                season=season,
-            )
-        ]
-
-        if not candidates:
+        season_key = self._normalize_season(type_key, season)
+        exact_key = self._build_item_cache_key(
+            keyword=keyword_key,
+            media_type=type_key,
+            year=year_key,
+            season=season_key,
+        )
+        item = await self._get_item(exact_key)
+        if not item:
             return {"code": 1, "message": "未找到共享识别记录"}
-        if len(candidates) > 1:
-            return {"code": 2, "message": "匹配到多条共享识别记录，请补充年份或季信息"}
+
         return {
             "code": 0,
             "message": "success",
-            "data": {"item": candidates[0]},
+            "data": {"item": item},
         }
 
 

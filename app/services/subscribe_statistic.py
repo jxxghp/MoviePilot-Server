@@ -94,7 +94,7 @@ class SubscribeService:
         cache_key = f"subscribe_{stype}_{page}_{count}_{genre_id}_{min_rating}_{max_rating}_{sort_type}"
         cached_data = cache_manager.statistic_cache.get(cache_key)
 
-        if not cached_data:
+        if cached_data is None:
             statistics = await SubscribeStatistics.list(db, stype=stype, page=page, count=count, genre_id=genre_id,
                                                         min_rating=min_rating, max_rating=max_rating, sort_type=sort_type)
             cached_data = [sta.dict() for sta in statistics]

@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import aiohttp
+from cacheout import Cache
 
 from app.core.config import settings
 
@@ -16,6 +17,22 @@ class TMDBService:
         self.api_key = settings.TMDB_API_KEY
         self.base_url = settings.TMDB_API_URL
         self.timeout = settings.TMDB_TIMEOUT
+        self._session: Optional[aiohttp.ClientSession] = None
+        self._media_info_cache = Cache(maxsize=2048, ttl=86400)
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """获取可复用的HTTP会话。"""
+        if self._session is None or self._session.closed:
+            timeout = aiohttp.ClientTimeout(total=self.timeout)
+            connector = aiohttp.TCPConnector(limit=100, ttl_dns_cache=300)
+            self._session = aiohttp.ClientSession(timeout=timeout, connector=connector)
+        return self._session
+
+    async def close(self):
+        """关闭可复用的HTTP会话。"""
+        if self._session and not self._session.closed:
+            await self._session.close()
+        self._session = None
 
     @staticmethod
     def _normalize_media_type(media_type: Optional[str]) -> str:
@@ -45,7 +62,7 @@ class TMDBService:
     async def _make_request(self, session: aiohttp.ClientSession, url: str) -> Optional[Dict[str, Any]]:
         """发起API请求"""
         try:
-            async with session.get(url, timeout=self.timeout) as response:
+            async with session.get(url) as response:
                 if response.status == 200:
                     return await response.json()
                 else:
@@ -61,9 +78,8 @@ class TMDBService:
             return None
 
         url = f"{self.base_url}/movie/{tmdb_id}?api_key={self.api_key}&language=zh-CN"
-
-        async with aiohttp.ClientSession() as session:
-            return await self._make_request(session, url)
+        session = await self._get_session()
+        return await self._make_request(session, url)
 
     async def get_tv_details(self, tmdb_id: int) -> Optional[Dict[str, Any]]:
         """获取电视剧详情"""
@@ -71,9 +87,8 @@ class TMDBService:
             return None
 
         url = f"{self.base_url}/tv/{tmdb_id}?api_key={self.api_key}&language=zh-CN"
-
-        async with aiohttp.ClientSession() as session:
-            return await self._make_request(session, url)
+        session = await self._get_session()
+        return await self._make_request(session, url)
 
     async def get_media_details(self, tmdb_id: int, media_type: str = "movie") -> Optional[Dict[str, Any]]:
         """获取媒体详情（电影或电视剧）"""
@@ -85,15 +100,20 @@ class TMDBService:
 
     async def get_genre_ids(self, tmdb_id: int, media_type: str = "movie") -> Optional[str]:
         """获取媒体的genre_ids"""
-        details = await self.get_media_details(tmdb_id, media_type)
-        if details and "genres" in details:
-            genre_ids = [str(genre["id"]) for genre in details["genres"]]
-            return ",".join(genre_ids)
+        media_info = await self.get_media_info(tmdb_id, media_type)
+        if media_info:
+            return media_info.get("genre_ids")
         return None
 
     async def get_media_info(self, tmdb_id: int, media_type: str = "movie") -> Optional[Dict[str, Any]]:
         """获取媒体完整信息，包括genre_ids"""
-        details = await self.get_media_details(tmdb_id, media_type)
+        normalized_type = self._normalize_media_type(media_type)
+        cache_key = f"{normalized_type}:{tmdb_id}"
+        cached_info = self._media_info_cache.get(cache_key)
+        if cached_info is not None:
+            return dict(cached_info)
+
+        details = await self.get_media_details(tmdb_id, normalized_type)
         if not details:
             return None
 
@@ -102,7 +122,7 @@ class TMDBService:
             "name": details.get("title") or details.get("name"),
             "year": details.get("release_date", "").split("-")[0] if details.get("release_date") else
             details.get("first_air_date", "").split("-")[0] if details.get("first_air_date") else None,
-            "type": media_type,
+            "type": normalized_type,
             "tmdbid": tmdb_id,
             "poster": f"https://image.tmdb.org/t/p/w500{details.get('poster_path')}" if details.get(
                 "poster_path") else None,
@@ -113,7 +133,8 @@ class TMDBService:
             "genre_ids": ",".join([str(genre["id"]) for genre in details.get("genres", [])])
         }
 
-        return info
+        self._media_info_cache.set(cache_key, info)
+        return dict(info)
 
 
 # 全局TMDB服务实例

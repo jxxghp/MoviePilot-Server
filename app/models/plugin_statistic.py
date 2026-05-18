@@ -1,7 +1,7 @@
 """
 插件统计模型
 """
-from sqlalchemy import Column, Integer, String, select, delete, func
+from sqlalchemy import Column, Integer, String, select, delete, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.base import Base, get_id_column
@@ -30,6 +30,60 @@ class PluginStatistics(Base):
             select(cls).where(cls.plugin_id == pid)
         )
         return result.scalar_one_or_none()
+
+    @classmethod
+    async def increment_count_by_plugin_id(
+            cls,
+            db: AsyncSession,
+            pid: str,
+            increment: int,
+            date: str,
+            repo_url: str | None = None,
+    ) -> int:
+        """
+        按插件ID原子累加安装次数，返回更新的行数。
+        """
+        payload = {
+            "count": func.coalesce(cls.count, 0) + increment,
+            "date": date,
+        }
+        if repo_url:
+            payload["repo_url"] = repo_url
+
+        result = await db.execute(
+            update(cls)
+            .where(cls.plugin_id == pid)
+            .values(**payload)
+            .execution_options(synchronize_session=False)
+        )
+        return result.rowcount or 0
+
+    @classmethod
+    async def increment_count_by_id(
+            cls,
+            db: AsyncSession,
+            sid: int,
+            increment: int,
+            date: str,
+            repo_url: str | None = None,
+    ) -> int:
+        """
+        按主键原子累加安装次数，返回更新的行数。
+        """
+        payload = {
+            "count": func.coalesce(cls.count, 0) + increment,
+            "date": date,
+        }
+        if repo_url:
+            payload["repo_url"] = repo_url
+
+        result = await db.execute(
+            update(cls)
+            .where(cls.id == sid)
+            .values(**payload)
+            .execution_options(synchronize_session=False)
+        )
+        return result.rowcount or 0
 
     @classmethod
     async def read_prefer_camel(cls, db: AsyncSession, pid: str):

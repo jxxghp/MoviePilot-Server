@@ -1,7 +1,7 @@
 """
 订阅分享模型
 """
-from sqlalchemy import Column, Integer, String, Float, or_, and_, func, select, delete, desc
+from sqlalchemy import Column, Integer, String, Float, or_, and_, func, select, delete, desc, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.base import Base, get_id_column
@@ -95,6 +95,19 @@ class SubscribeShare(Base):
             select(cls).where(cls.id == sid)
         )
         return result.scalar_one_or_none()
+
+    @classmethod
+    async def increment_count_by_id(cls, db: AsyncSession, sid: int, increment: int = 1) -> int:
+        """
+        按主键原子累加复用次数，返回更新的行数。
+        """
+        result = await db.execute(
+            update(cls)
+            .where(cls.id == sid)
+            .values(count=func.coalesce(cls.count, 0) + increment)
+            .execution_options(synchronize_session=False)
+        )
+        return result.rowcount or 0
 
     async def update(self, db: AsyncSession, payload: dict):
         payload = {k: v for k, v in payload.items() if v is not None}

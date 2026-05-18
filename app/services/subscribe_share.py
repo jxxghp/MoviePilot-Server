@@ -88,7 +88,7 @@ class SubscribeShareService:
         cache_key = f"subscribe_{name}_{page}_{count}_{genre_id}_{min_rating}_{max_rating}_{sort_type}"
         cached_data = cache_manager.share_cache.get(cache_key)
 
-        if not cached_data:
+        if cached_data is None:
             shares = await SubscribeShare.list(db, name=name, page=page, count=count, genre_id=genre_id,
                                                min_rating=min_rating, max_rating=max_rating, sort_type=sort_type)
             cached_data = [sha.dict() for sha in shares]
@@ -99,12 +99,8 @@ class SubscribeShareService:
     @staticmethod
     async def fork_share(db: AsyncSession, share_id: int) -> Dict[str, Any]:
         """复用分享的订阅"""
-        # 查询数据库中是否存在
-        share = await SubscribeShare.read_by_id(db, sid=share_id)
-
-        # 如果存在则更新
-        if share:
-            await share.update(db, {"count": share.count + 1})
+        await SubscribeShare.increment_count_by_id(db, sid=share_id)
+        await db.commit()
 
         return {"code": 0, "message": "success"}
 
@@ -114,7 +110,7 @@ class SubscribeShareService:
         cache_key = "subscribe_share_statistics"
         cached_data = cache_manager.share_cache.get(cache_key)
 
-        if not cached_data:
+        if cached_data is None:
             statistics = await SubscribeShare.share_statistics(db)
             cached_data = [
                 {
