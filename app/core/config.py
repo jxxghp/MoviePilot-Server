@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     WEB_CONCURRENCY: int = 0
     SERVER_BACKLOG: int = 4096
     SERVER_LIMIT_CONCURRENCY: int = 0
-    SERVER_TIMEOUT_KEEP_ALIVE: int = 5
+    SERVER_TIMEOUT_KEEP_ALIVE: int = 30
 
     # TheMovieDB API配置
     TMDB_API_KEY: str = "db55323b8d3e4154498498a75642b381"

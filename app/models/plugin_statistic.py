@@ -125,5 +125,12 @@ class PluginStatistics(Base):
         )
         return result.scalars().all()
 
+    @classmethod
+    async def list_id_count(cls, db: AsyncSession):
+        result = await db.execute(
+            select(cls.plugin_id, cls.count)
+        )
+        return result.all()
+
     def dict(self):
         return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}

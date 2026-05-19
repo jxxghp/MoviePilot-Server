@@ -106,9 +106,9 @@ class PluginService:
         cached_data = cache_manager.statistic_cache.get(cache_key)
 
         if cached_data is None:
-            statistics = await PluginStatistics.list(db)
+            statistics = await PluginStatistics.list_id_count(db)
             cached_data = {
-                sta.plugin_id: sta.count for sta in statistics
+                row.plugin_id: row.count for row in statistics
             }
             cache_manager.statistic_cache.set(cache_key, cached_data)
 

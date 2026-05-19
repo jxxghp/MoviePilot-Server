@@ -83,8 +83,41 @@ class SubscribeService:
     async def batch_report_subscribes(db: AsyncSession, subscribes: List[SubscribeStatisticItem]) -> Dict[str, Any]:
         """批量添加订阅统计"""
         for subscribe in subscribes:
-            await SubscribeService.add_subscribe(db, subscribe)
+            if not subscribe.tmdbid or not subscribe.type:
+                continue
+            if not subscribe.genre_ids:
+                try:
+                    tmdb_info = await tmdb_service.get_media_info(subscribe.tmdbid, subscribe.type)
+                    if not tmdb_info or not tmdb_info.get("genre_ids"):
+                        continue
+                    subscribe.genre_ids = tmdb_info["genre_ids"]
+                    if not subscribe.name and tmdb_info.get("name"):
+                        subscribe.name = tmdb_info["name"]
+                    if not subscribe.year and tmdb_info.get("year"):
+                        subscribe.year = tmdb_info["year"]
+                    if not subscribe.poster and tmdb_info.get("poster"):
+                        subscribe.poster = tmdb_info["poster"]
+                    if not subscribe.backdrop and tmdb_info.get("backdrop"):
+                        subscribe.backdrop = tmdb_info["backdrop"]
+                    if not subscribe.vote and tmdb_info.get("vote"):
+                        subscribe.vote = tmdb_info["vote"]
+                    if not subscribe.description and tmdb_info.get("description"):
+                        subscribe.description = tmdb_info["description"]
+                except Exception:
+                    continue
 
+            sub = await SubscribeStatistics.read(
+                db,
+                mid=subscribe.tmdbid or subscribe.doubanid,
+                season=subscribe.season
+            )
+            if not sub:
+                sub = SubscribeStatistics(**subscribe.model_dump(), count=1)
+                db.add(sub)
+            else:
+                sub.count = sub.count + 1
+
+        await db.commit()
         return {"code": 0, "message": "success"}
 
     @staticmethod

@@ -9,6 +9,26 @@ services:
             POSTGRES_DB: moviepilot
             POSTGRES_USER: postgres
             POSTGRES_PASSWORD: postgres
+        command:
+            - "postgres"
+            - "-c"
+            - "shared_buffers=2GB"
+            - "-c"
+            - "effective_cache_size=6GB"
+            - "-c"
+            - "work_mem=16MB"
+            - "-c"
+            - "maintenance_work_mem=512MB"
+            - "-c"
+            - "max_connections=60"
+            - "-c"
+            - "random_page_cost=1.1"
+            - "-c"
+            - "checkpoint_completion_target=0.9"
+            - "-c"
+            - "wal_buffers=64MB"
+            - "-c"
+            - "max_wal_size=2GB"
         volumes:
             - '/root/postgresql:/var/lib/postgresql/data'
         ports:
@@ -31,7 +51,7 @@ services:
                 "--save", "900", "1",
                 "--save", "300", "10",
                 "--save", "60", "10000",
-                "--maxmemory", "10gb",
+                "--maxmemory", "2gb",
                 "--maxmemory-policy", "allkeys-lru"
             ]
         ports:
@@ -52,8 +72,8 @@ services:
             - DB_NAME=moviepilot
             - DB_USER=postgres
             - DB_PASSWORD=postgres
-            - DB_POOL_SIZE=15
-            - DB_MAX_OVERFLOW=5
+            - DB_POOL_SIZE=8
+            - DB_MAX_OVERFLOW=2
             - CONFIG_DIR=/config
             - REDIS_HOST=localhost
             - REDIS_PORT=6380
