@@ -2,9 +2,10 @@
 115网盘 OAuth2授权 API路由
 """
 
+import json
 import time
 import secrets
-from typing import Dict
+from typing import Optional
 from urllib.parse import urlencode
 
 import httpx
@@ -12,11 +13,11 @@ from fastapi import APIRouter, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.core.config import settings
+from app.db.redis import get_redis
 
 router = APIRouter()
 
-# Key: state, Value: AuthSession
-auth_sessions: Dict[str, dict] = {}
+AUTH_SESSION_TTL_SECONDS = 300
 
 
 class AuthSession:
@@ -25,15 +26,21 @@ class AuthSession:
     """
 
     def __init__(self, state: str):
+        """
+        初始化一次 115 OAuth2 授权会话。
+        """
         self.state = state
         self.status = "pending"
         self.access_token = None
         self.refresh_token = None
         self.expires_in = None
         self.created_at = time.time()
-        self.expires_at = time.time() + 300
+        self.expires_at = self.created_at + AUTH_SESSION_TTL_SECONDS
 
     def to_dict(self) -> dict:
+        """
+        转换为可序列化的会话数据。
+        """
         return {
             "state": self.state,
             "status": self.status,
@@ -45,25 +52,66 @@ class AuthSession:
         }
 
     def is_expired(self) -> bool:
+        """
+        判断当前会话是否已超过有效期。
+        """
         return time.time() > self.expires_at
 
 
-def cleanup_expired_sessions():
+def session_key(state: str) -> str:
     """
-    清理过期的会话
+    生成授权会话在 Redis 中的存储 key。
     """
-    current_time = time.time()
-    expired_states = [
-        state
-        for state, session in auth_sessions.items()
-        if session["expires_at"] < current_time
-    ]
-    for state in expired_states:
-        del auth_sessions[state]
+    return f"{settings.REDIS_KEY_PREFIX}:u115_auth:{state}"
+
+
+def session_ttl(session: dict) -> int:
+    """
+    根据会话过期时间计算 Redis 剩余 TTL。
+    """
+    return max(int(session["expires_at"] - time.time()), 1)
+
+
+async def save_auth_session(session: dict) -> None:
+    """
+    保存授权会话，确保多 worker 或多实例能共享 state。
+    """
+    await get_redis().set(
+        session_key(session["state"]),
+        json.dumps(session, ensure_ascii=False),
+        ex=session_ttl(session),
+    )
+
+
+async def load_auth_session(state: str) -> Optional[dict]:
+    """
+    读取授权会话，并清理已经过期或损坏的 Redis 数据。
+    """
+    raw_session = await get_redis().get(session_key(state))
+    if not raw_session:
+        return None
+    if isinstance(raw_session, bytes):
+        raw_session = raw_session.decode("utf-8")
+    try:
+        session = json.loads(raw_session)
+    except json.JSONDecodeError:
+        await delete_auth_session(state)
+        return None
+    if session.get("expires_at", 0) < time.time():
+        await delete_auth_session(state)
+        return None
+    return session
+
+
+async def delete_auth_session(state: str) -> None:
+    """
+    删除已经完成、过期或无效的授权会话。
+    """
+    await get_redis().delete(session_key(state))
 
 
 @router.get("/auth_url")
-def get_auth_url():
+async def get_auth_url():
     """
     生成115授权URL
     """
@@ -80,12 +128,10 @@ def get_auth_url():
             status_code=500,
         )
 
-    cleanup_expired_sessions()
-
     state = secrets.token_urlsafe(32)
 
     session = AuthSession(state)
-    auth_sessions[state] = session.to_dict()
+    await save_auth_session(session.to_dict())
 
     params = {
         "client_id": settings.U115_CLIENT_ID,
@@ -108,17 +154,10 @@ async def auth_callback(
     """
     115 OAuth2回调接口
     """
-    cleanup_expired_sessions()
-
-    if state not in auth_sessions:
+    session = await load_auth_session(state)
+    if not session:
         return HTMLResponse(
             content=generate_error_page("授权会话不存在或已过期"), status_code=400
-        )
-
-    session = auth_sessions[state]
-    if session["expires_at"] < time.time():
-        return HTMLResponse(
-            content=generate_error_page("授权会话已过期"), status_code=400
         )
 
     try:
@@ -155,7 +194,7 @@ async def auth_callback(
             session["access_token"] = data.get("access_token")
             session["refresh_token"] = data.get("refresh_token")
             session["expires_in"] = data.get("expires_in")
-            auth_sessions[state] = session
+            await save_auth_session(session)
 
             return HTMLResponse(content=generate_success_page())
 
@@ -170,13 +209,12 @@ async def auth_callback(
 
 
 @router.get("/token")
-def get_token(state: str = Query(..., description="状态码")):
+async def get_token(state: str = Query(..., description="状态码")):
     """
     获取Token接口
     """
-    cleanup_expired_sessions()
-
-    if state not in auth_sessions:
+    session = await load_auth_session(state)
+    if not session:
         return JSONResponse(
             content={
                 "success": False,
@@ -185,21 +223,13 @@ def get_token(state: str = Query(..., description="状态码")):
             }
         )
 
-    session = auth_sessions[state]
-
-    if session["expires_at"] < time.time():
-        del auth_sessions[state]
-        return JSONResponse(
-            content={"success": False, "status": "expired", "message": "授权会话已过期"}
-        )
-
     if session["status"] == "completed":
         token_data = {
             "access_token": session["access_token"],
             "refresh_token": session["refresh_token"],
             "expires_in": session["expires_in"],
         }
-        del auth_sessions[state]
+        await delete_auth_session(state)
         return JSONResponse(
             content={"success": True, "status": "completed", "data": token_data}
         )
