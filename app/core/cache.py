@@ -12,7 +12,7 @@ class CacheManager:
         self.statistic_cache = Cache(maxsize=128, ttl=1800)
 
         # 安装版本统计报表缓存
-        self.usage_statistic_cache = Cache(maxsize=32, ttl=3600)
+        self.usage_statistic_cache = Cache(maxsize=32, ttl=1800)
 
         # 订阅分享缓存
         self.share_cache = Cache(maxsize=128, ttl=1800)
