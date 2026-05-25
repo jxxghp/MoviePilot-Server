@@ -8,6 +8,7 @@ from app.api import (
     plugin_statistic,
     subscribe_statistic,
     subscribe_share,
+    usage_statistic,
     workflow_share,
     u115_auth,
 )
@@ -21,3 +22,4 @@ api_router.include_router(subscribe_share.router, prefix="/subscribe", tags=["su
 api_router.include_router(workflow_share.router, prefix="/workflow", tags=["workflow-share"])
 api_router.include_router(media_recognize_share.router, prefix="/recognize", tags=["media-recognize-share"])
 api_router.include_router(u115_auth.router, prefix="/u115", tags=["u115-auth"])
+api_router.include_router(usage_statistic.router, prefix="/usage", tags=["usage-statistic"])

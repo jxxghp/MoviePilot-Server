@@ -25,6 +25,16 @@ class PluginStatisticList(BaseModel):
     plugins: List[PluginStatisticItem]
 
 
+class UsageStatisticItem(BaseModel):
+    """安装版本统计项"""
+    user_uid: str
+    backend_version: Optional[str] = None
+    frontend_version: Optional[str] = None
+    version_flag: Optional[str] = None
+    platform: Optional[str] = None
+    arch: Optional[str] = None
+
+
 class SubscribeStatisticItem(BaseModel):
     """订阅统计项"""
     name: Optional[str] = None

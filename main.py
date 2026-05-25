@@ -12,6 +12,7 @@ from app.db.database import engine
 from app.db.redis import close_redis, init_redis
 from app.models import Base
 from app.services.data_cleanup import data_cleanup_service
+from app.services.database_schema import ensure_database_schema
 from app.services.media_recognize_share import media_recognize_share_service
 from app.services.tmdb import tmdb_service
 
@@ -23,13 +24,9 @@ async def lifespan(_: FastAPI):
     """
     应用生命周期管理
     """
-    # 启动时初始化数据库（SQLite 才执行，PostgreSQL 跳过以避免等待数据库就绪）
+    # 启动时初始化数据库结构，PostgreSQL 使用事务级锁避免多 worker 并发建表冲突。
     try:
-        if not settings.is_postgresql:
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-        else:
-            logger.info("Skipping database schema init at startup for PostgreSQL")
+        await ensure_database_schema(engine, Base, settings.is_postgresql)
     except Exception as e:
         logger.warning(f"Database init skipped due to error: {e}")
 
