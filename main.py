@@ -14,6 +14,7 @@ from app.models import Base
 from app.services.data_cleanup import data_cleanup_service
 from app.services.database_schema import ensure_database_schema
 from app.services.media_recognize_share import media_recognize_share_service
+from app.services.request_user_statistic import RequestUserStatisticService
 from app.services.tmdb import tmdb_service
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,23 @@ App = FastAPI(
 
 # 包含API路由（去掉全局前缀，直接挂载到根路径）
 App.include_router(api_router)
+
+
+@App.middleware("http")
+async def record_request_user_middleware(request, call_next):
+    """
+    记录经过服务端接口的请求用户数量。
+    """
+    response = await call_next(request)
+    if response.status_code >= 400:
+        return response
+
+    try:
+        await RequestUserStatisticService.record_request_user(request)
+    except Exception as err:
+        logger.warning(f"Record request user skipped: {err}")
+
+    return response
 
 
 @App.get("/")

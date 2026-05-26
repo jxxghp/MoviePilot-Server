@@ -1,7 +1,7 @@
 """
 安装版本统计API路由
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.deps import get_db
@@ -12,11 +12,15 @@ router = APIRouter()
 
 
 @router.post("/report")
-async def usage_report(usage: UsageStatisticItem, db: AsyncSession = Depends(get_db)):
+async def usage_report(
+        usage: UsageStatisticItem,
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+):
     """
     上报安装版本统计
     """
-    return await UsageService.report_usage(db, usage)
+    return await UsageService.report_usage(db, usage, request)
 
 
 @router.get("/statistic")
