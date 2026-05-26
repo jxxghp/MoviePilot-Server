@@ -52,11 +52,11 @@ class UsageService:
 
         if other_users > 0:
             backend_versions.append({
-                "version": "其他",
+                "version": "未知",
                 "count": other_users,
             })
             frontend_versions.append({
-                "version": "其他",
+                "version": "未知",
                 "count": other_users,
             })
 
@@ -181,7 +181,7 @@ class UsageService:
             "backend_versions": normalized_backend_versions,
             "frontend_versions": normalized_frontend_versions,
             "updated_at": UsageService._now(),
-            "cache_ttl": 3600,
+            "cache_ttl": 1800,
         }
         cache_manager.usage_statistic_cache.set(cache_key, cached_data)
         other_users = await UsageService._count_other_users()
