@@ -86,7 +86,7 @@ class UsageService:
     @staticmethod
     async def _count_other_users() -> int:
         """
-        读取尚未上报安装版本的请求用户数量。
+        读取尚未上报安装版本的未知用户数量。
         """
         try:
             return await RequestUserStatisticService.count_other_users()

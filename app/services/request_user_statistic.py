@@ -22,7 +22,7 @@ class RequestUserStatisticService:
     REPORTED_USERS_KEY = f"{settings.REDIS_KEY_PREFIX}:usage:request_users:reported"
     REQUEST_FINGERPRINT_STATE_KEY = "request_user_fingerprint"
     REPORT_USER_UID_HEADER = "X-MoviePilot-User-Uid"
-    RECENT_FINGERPRINT_CACHE_TTL = 300
+    RECENT_FINGERPRINT_CACHE_TTL = 3600
     RECENT_FINGERPRINT_CACHE = Cache(maxsize=65536, ttl=RECENT_FINGERPRINT_CACHE_TTL)
     RECORD_UNKNOWN_USER_SCRIPT = """
     if redis.call('SISMEMBER', KEYS[2], ARGV[1]) == 1 then
@@ -157,7 +157,7 @@ class RequestUserStatisticService:
             user_uid: Optional[str] = None,
     ) -> None:
         """
-        将当前请求用户从“其他”分类移动到已上报安装版本分类。
+        将当前请求用户从“未知”分类移动到已上报安装版本分类。
         """
         fingerprints = set()
         user_uid_fingerprint = RequestUserStatisticService._build_user_uid_fingerprint(user_uid)
