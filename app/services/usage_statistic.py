@@ -2,6 +2,7 @@
 安装版本统计服务
 """
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Any, Dict
 
@@ -18,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 class UsageService:
     """安装版本统计服务类"""
+
+    _last_statistics_cache_invalidated_at = 0.0
+    _statistics_cache_invalidate_interval = 300
 
     @staticmethod
     def _now() -> str:
@@ -63,6 +67,21 @@ class UsageService:
             "backend_versions": backend_versions,
             "frontend_versions": frontend_versions,
         }
+
+    @staticmethod
+    def _invalidate_statistics_cache() -> None:
+        """
+        按固定间隔失效安装版本统计缓存。
+        """
+        now = time.monotonic()
+        if (
+                now - UsageService._last_statistics_cache_invalidated_at
+                < UsageService._statistics_cache_invalidate_interval
+        ):
+            return
+
+        cache_manager.usage_statistic_cache.clear()
+        UsageService._last_statistics_cache_invalidated_at = now
 
     @staticmethod
     async def _count_other_users() -> int:
@@ -120,7 +139,7 @@ class UsageService:
         except Exception as err:
             logger.warning(f"Mark request user reported skipped: {err}")
 
-        cache_manager.usage_statistic_cache.clear()
+        UsageService._invalidate_statistics_cache()
         return {"code": 0, "message": "success"}
 
     @staticmethod

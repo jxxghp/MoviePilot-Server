@@ -4,6 +4,7 @@ FastAPI应用主文件
 import logging
 from contextlib import asynccontextmanager
 
+from starlette.background import BackgroundTask
 from fastapi import FastAPI
 
 from app.api.api import api_router
@@ -64,13 +65,25 @@ async def record_request_user_middleware(request, call_next):
     记录经过服务端接口的请求用户数量。
     """
     response = await call_next(request)
-    if response.status_code >= 400:
+    if response.status_code >= 400 or RequestUserStatisticService.should_skip_request(request):
         return response
 
-    try:
-        await RequestUserStatisticService.record_request_user(request)
-    except Exception as err:
-        logger.warning(f"Record request user skipped: {err}")
+    if response.background:
+        original_background = response.background
+
+        async def record_with_original_background():
+            """
+            先执行原响应后台任务，再登记请求用户统计。
+            """
+            await original_background()
+            await RequestUserStatisticService.safe_record_request_user(request)
+
+        response.background = BackgroundTask(record_with_original_background)
+    else:
+        response.background = BackgroundTask(
+            RequestUserStatisticService.safe_record_request_user,
+            request,
+        )
 
     return response
 

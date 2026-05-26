@@ -6,6 +6,7 @@ import hmac
 import logging
 from typing import Optional
 
+from cacheout import Cache
 from fastapi import Request
 
 from app.core.config import settings
@@ -21,6 +22,8 @@ class RequestUserStatisticService:
     REPORTED_USERS_KEY = f"{settings.REDIS_KEY_PREFIX}:usage:request_users:reported"
     REQUEST_FINGERPRINT_STATE_KEY = "request_user_fingerprint"
     REPORT_USER_UID_HEADER = "X-MoviePilot-User-Uid"
+    RECENT_FINGERPRINT_CACHE_TTL = 300
+    RECENT_FINGERPRINT_CACHE = Cache(maxsize=65536, ttl=RECENT_FINGERPRINT_CACHE_TTL)
     RECORD_UNKNOWN_USER_SCRIPT = """
     if redis.call('SISMEMBER', KEYS[2], ARGV[1]) == 1 then
         return 0
@@ -29,7 +32,7 @@ class RequestUserStatisticService:
     """
 
     @staticmethod
-    def _should_skip_request(request: Request) -> bool:
+    def should_skip_request(request: Request) -> bool:
         """
         判断当前请求是否需要跳过用户统计。
         """
@@ -41,6 +44,21 @@ class RequestUserStatisticService:
             "/usage/statistic",
             "/favicon.ico",
         }
+
+    @staticmethod
+    def _is_recent_fingerprint(fingerprint: str) -> bool:
+        """
+        判断用户指纹是否已在本进程短时间内登记过。
+        """
+        return RequestUserStatisticService.RECENT_FINGERPRINT_CACHE.get(fingerprint) is not None
+
+    @staticmethod
+    def _remember_fingerprints(fingerprints: set[str]) -> None:
+        """
+        记录本进程短时间内已经处理过的用户指纹。
+        """
+        for fingerprint in fingerprints:
+            RequestUserStatisticService.RECENT_FINGERPRINT_CACHE.set(fingerprint, True)
 
     @staticmethod
     def _get_client_ip(request: Request) -> str:
@@ -98,7 +116,7 @@ class RequestUserStatisticService:
         """
         将未上报安装版本的请求用户登记到 Redis。
         """
-        if RequestUserStatisticService._should_skip_request(request):
+        if RequestUserStatisticService.should_skip_request(request):
             return
 
         fingerprint = RequestUserStatisticService._build_request_fingerprint(request)
@@ -110,6 +128,8 @@ class RequestUserStatisticService:
             RequestUserStatisticService.REQUEST_FINGERPRINT_STATE_KEY,
             fingerprint,
         )
+        if RequestUserStatisticService._is_recent_fingerprint(fingerprint):
+            return
 
         redis = get_redis()
         await redis.eval(
@@ -119,6 +139,17 @@ class RequestUserStatisticService:
             RequestUserStatisticService.REPORTED_USERS_KEY,
             fingerprint,
         )
+        RequestUserStatisticService._remember_fingerprints({fingerprint})
+
+    @staticmethod
+    async def safe_record_request_user(request: Request) -> None:
+        """
+        安全登记请求用户，避免统计异常影响正常响应。
+        """
+        try:
+            await RequestUserStatisticService.record_request_user(request)
+        except Exception as err:
+            logger.warning(f"Record request user skipped: {err}")
 
     @staticmethod
     async def mark_request_user_reported(
@@ -150,6 +181,7 @@ class RequestUserStatisticService:
             pipe.sadd(RequestUserStatisticService.REPORTED_USERS_KEY, *fingerprints)
             pipe.srem(RequestUserStatisticService.UNKNOWN_USERS_KEY, *fingerprints)
             await pipe.execute()
+        RequestUserStatisticService._remember_fingerprints(fingerprints)
 
     @staticmethod
     async def count_other_users() -> int:
