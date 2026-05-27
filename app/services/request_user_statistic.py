@@ -94,14 +94,10 @@ class RequestUserStatisticService:
         return RequestUserStatisticService._build_hashed_fingerprint(f"uid\0{user_uid}")
 
     @staticmethod
-    def _build_request_fingerprint(request: Request) -> Optional[str]:
+    def _build_source_fingerprint(request: Request) -> Optional[str]:
         """
-        根据请求头或客户端来源生成用户指纹。
+        根据客户端来源生成兼容旧客户端的用户指纹。
         """
-        user_uid = request.headers.get(RequestUserStatisticService.REPORT_USER_UID_HEADER)
-        if user_uid:
-            return RequestUserStatisticService._build_user_uid_fingerprint(user_uid.strip())
-
         client_ip = RequestUserStatisticService._get_client_ip(request)
         user_agent = request.headers.get("User-Agent", "")
         if not client_ip and not user_agent:
@@ -110,6 +106,17 @@ class RequestUserStatisticService:
         return RequestUserStatisticService._build_hashed_fingerprint(
             f"request\0{client_ip}\0{user_agent}"
         )
+
+    @staticmethod
+    def _build_request_fingerprint(request: Request) -> Optional[str]:
+        """
+        根据请求头或客户端来源生成用户指纹。
+        """
+        user_uid = request.headers.get(RequestUserStatisticService.REPORT_USER_UID_HEADER)
+        if user_uid:
+            return RequestUserStatisticService._build_user_uid_fingerprint(user_uid.strip())
+
+        return RequestUserStatisticService._build_source_fingerprint(request)
 
     @staticmethod
     async def record_request_user(request: Request) -> None:
@@ -172,6 +179,9 @@ class RequestUserStatisticService:
             ) or RequestUserStatisticService._build_request_fingerprint(request)
             if request_fingerprint:
                 fingerprints.add(request_fingerprint)
+            source_fingerprint = RequestUserStatisticService._build_source_fingerprint(request)
+            if source_fingerprint:
+                fingerprints.add(source_fingerprint)
 
         if not fingerprints:
             return
