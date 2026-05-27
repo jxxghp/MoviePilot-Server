@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "MoviePilot Server"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
+    MP_ADMIN_USERS: str = ""
 
     # 服务器配置
     HOST: str = "0.0.0.0"
@@ -128,6 +129,15 @@ class Settings(BaseSettings):
     def media_recognize_share_redis_prefix(self) -> str:
         """共享识别缓存Redis前缀"""
         return f"{self.REDIS_KEY_PREFIX}:media_recognize_share"
+
+    @property
+    def admin_users(self) -> set[str]:
+        """获取服务端配置的管理员 GitHub 用户名集合。"""
+        return {
+            item.strip().lower()
+            for item in self.MP_ADMIN_USERS.split(",")
+            if item.strip()
+        }
 
 
 # 全局配置实例
