@@ -18,8 +18,11 @@ class SubscribeService:
     async def add_subscribe(db: AsyncSession, subscribe: SubscribeStatisticItem) -> Dict[str, Any]:
         """添加订阅统计"""
         # 如果没有tmdbid或类型则直接拒绝不统计
-        if not subscribe.tmdbid or not subscribe.type:
-            return {"code": 1, "message": "缺少tmdbid"}
+        if (not subscribe.tmdbid
+                or not subscribe.type
+                or not subscribe.poster
+                or not subscribe.poster.startswith("http")):
+            return {"code": 1, "message": "元数据不完整"}
         # 如果没有genre_ids，则查询TheMovieDB获取
         if not subscribe.genre_ids:
             try:
