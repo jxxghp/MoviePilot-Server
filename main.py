@@ -5,13 +5,15 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from redis.exceptions import ConnectionError as RedisConnectionError
 from starlette.requests import Request
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.api.api import api_router
 from app.core.config import settings
 from app.db.database import engine
-from app.db.redis import close_redis, init_redis
+from app.db.redis import close_redis, init_redis, log_connection_error
 from app.models import Base
 from app.services.data_cleanup import data_cleanup_service
 from app.services.database_schema import ensure_database_schema
@@ -57,6 +59,24 @@ App = FastAPI(
     redoc_url=None,
     lifespan=lifespan
 )
+
+
+@App.exception_handler(RedisConnectionError)
+async def redis_connection_error_handler(
+        _: Request,
+        err: RedisConnectionError,
+) -> JSONResponse:
+    """将 Redis 连接故障转换为可退避响应，避免异常栈放大过载。"""
+    log_connection_error(err)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Service temporarily unavailable"},
+        headers={
+            "Retry-After": "1",
+            "Cache-Control": "no-store",
+        },
+    )
+
 
 class RequestUserStatisticMiddleware:
     """在成功响应完成后将请求用户加入异步统计队列。"""

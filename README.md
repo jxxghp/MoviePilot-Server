@@ -60,8 +60,8 @@ PostgreSQL、Redis 和服务端的完整编排示例见 [docker/docker-compose.y
 | `REDIS_HOST` | `localhost` | Redis 地址 |
 | `REDIS_PORT` | `6379` | Redis 端口 |
 | `REDIS_PASSWORD` | 空 | Redis 密码 |
-| `REDIS_MAX_CONNECTIONS` | `100` | 每个 worker 的 Redis 连接池上限 |
-| `REDIS_POOL_TIMEOUT` | `1` | Redis 连接池等待超时（秒） |
+| `REDIS_MAX_CONNECTIONS` | `256` | 每个 worker 的 Redis 连接池上限 |
+| `REDIS_POOL_TIMEOUT` | `0.25` | Redis 连接池等待超时（秒） |
 | `DB_POOL_SIZE` | `8` | 每个 worker 的 PostgreSQL 常驻连接数 |
 | `DB_MAX_OVERFLOW` | `4` | 每个 worker 的 PostgreSQL 临时溢出连接数 |
 | `DB_POOL_TIMEOUT` | `30` | PostgreSQL 连接池等待超时（秒） |

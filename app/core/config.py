@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     REDIS_USERNAME: str = ""
     REDIS_PASSWORD: str = ""
     REDIS_SSL: bool = False
-    REDIS_MAX_CONNECTIONS: int = 100
-    REDIS_POOL_TIMEOUT: float = 1.0
+    REDIS_MAX_CONNECTIONS: int = 256
+    REDIS_POOL_TIMEOUT: float = 0.25
     REDIS_CONNECT_TIMEOUT: int = 5
     REDIS_SOCKET_TIMEOUT: int = 5
     REDIS_KEY_PREFIX: str = "moviepilot"
@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     SERVER_WORKERS: int = 0
     WEB_CONCURRENCY: int = 0
     SERVER_BACKLOG: int = 4096
-    SERVER_LIMIT_CONCURRENCY: int = 1024
+    SERVER_LIMIT_CONCURRENCY: int = 512
     SERVER_TIMEOUT_KEEP_ALIVE: int = 5
     SERVER_ACCESS_LOG: bool = False
 

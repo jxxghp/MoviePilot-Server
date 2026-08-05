@@ -58,8 +58,8 @@ DB_POOL_RECYCLE=1800 # 连接最长复用时间（秒）
 生产环境默认会按当前运行环境可见 CPU 核心数启动多个 Uvicorn worker，最多自动使用 4 个 worker。`DEBUG=true` 时固定为 1 个 worker，避免热重载和多进程冲突。
 
 ```bash
-SERVER_WORKERS=4     # 优先使用
-WEB_CONCURRENCY=4    # 兼容常见部署平台变量
+SERVER_WORKERS=2     # 优先使用
+WEB_CONCURRENCY=2    # 兼容常见部署平台变量
 SERVER_BACKLOG=4096
 SERVER_LIMIT_CONCURRENCY=512
 SERVER_TIMEOUT_KEEP_ALIVE=5
@@ -67,6 +67,7 @@ SERVER_TIMEOUT_KEEP_ALIVE=5
 
 如果 PostgreSQL 的 `max_connections` 较小，需要同时降低 `SERVER_WORKERS`、`DB_POOL_SIZE` 或 `DB_MAX_OVERFLOW`。
 `SERVER_LIMIT_CONCURRENCY` 默认限制每个 worker 的并发请求数，避免请求洪峰占满 Redis/PostgreSQL 连接池。高并发部署可结合 worker 数量、数据库 `max_connections` 和实际流量调整；设置为 `0` 才表示不主动限制。
+默认编排使用 2 个 worker，每个 worker 最多占用 256 个 Redis 连接。连接池在 0.25 秒内没有可用连接时，接口会返回带 `Retry-After` 的 HTTP 503，使上游能够快速退避，而不是继续堆积等待并输出重复异常栈。
 
 ## Docker 部署
 
@@ -116,8 +117,8 @@ REDIS_DB=0
 REDIS_USERNAME=
 REDIS_PASSWORD=
 REDIS_SSL=false
-REDIS_MAX_CONNECTIONS=100
-REDIS_POOL_TIMEOUT=1
+REDIS_MAX_CONNECTIONS=256
+REDIS_POOL_TIMEOUT=0.25
 REDIS_CONNECT_TIMEOUT=5
 REDIS_SOCKET_TIMEOUT=5
 REDIS_KEY_PREFIX=moviepilot
@@ -128,6 +129,6 @@ REDIS_KEY_PREFIX=moviepilot
 - Redis 启用密码后，需要同时为服务端和应用端配置同一个 `REDIS_PASSWORD`。
 - 共享识别缓存键会写入 `${REDIS_KEY_PREFIX}:media_recognize_share:*` 命名空间。
 - 默认 `docker/docker-compose.yml` 已开启 AOF + RDB 持久化，并将数据目录挂载到 `/root/redis`。
-- 默认 `docker/docker-compose.yml` 已设置 `maxmemory 10gb`，淘汰策略为 `allkeys-lru`。
+- 默认 `docker/docker-compose.yml` 已设置 `maxmemory 2gb`，淘汰策略为 `allkeys-lru`。
 - 默认 `docker/docker-compose.yml` 会使用 `REDIS_PASSWORD` 环境变量；未设置时会回退到示例密码 `moviepilot_redis_password`，建议部署时覆盖。
 - 应用启动时会初始化 Redis，连接失败会导致启动失败。

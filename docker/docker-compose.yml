@@ -79,8 +79,9 @@ services:
             - REDIS_PORT=6380
             - REDIS_DB=0
             - REDIS_PASSWORD=${REDIS_PASSWORD:-moviepilot_redis_password}
-            - REDIS_POOL_TIMEOUT=1
-            - SERVER_WORKERS=4
+            - REDIS_MAX_CONNECTIONS=256
+            - REDIS_POOL_TIMEOUT=0.25
+            - SERVER_WORKERS=2
             - SERVER_BACKLOG=4096
             - SERVER_LIMIT_CONCURRENCY=512
             - SERVER_ACCESS_LOG=false

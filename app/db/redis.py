@@ -2,6 +2,7 @@
 Redis连接管理
 """
 import logging
+import time
 from typing import Optional
 
 from redis.asyncio import BlockingConnectionPool, Redis
@@ -11,6 +12,27 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 redis_client: Optional[Redis] = None
+CONNECTION_ERROR_LOG_INTERVAL = 60.0
+_last_connection_error_logged_at: Optional[float] = None
+_suppressed_connection_errors = 0
+
+
+def log_connection_error(err: Exception) -> None:
+    """按进程汇总 Redis 连接错误，避免过载时日志写入放大故障。"""
+    global _last_connection_error_logged_at, _suppressed_connection_errors
+
+    now = time.monotonic()
+    if (
+            _last_connection_error_logged_at is not None
+            and now - _last_connection_error_logged_at < CONNECTION_ERROR_LOG_INTERVAL
+    ):
+        _suppressed_connection_errors += 1
+        return
+
+    suppressed = _suppressed_connection_errors
+    _last_connection_error_logged_at = now
+    _suppressed_connection_errors = 0
+    logger.warning("Redis connection unavailable: %s; suppressed=%d", err, suppressed)
 
 
 async def init_redis() -> Redis:
