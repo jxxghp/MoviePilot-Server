@@ -63,7 +63,7 @@ services:
         restart: always
 
     moviepilot-server:
-        image: 'jxxghp/moviepilot-server:latest'
+        image: 'jxxghp/moviepilot-v3:latest'
         container_name: moviepilot-server
         environment:
             - DATABASE_TYPE=postgresql

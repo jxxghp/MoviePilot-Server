@@ -5,7 +5,7 @@ ENV LANG="C.UTF-8" \
     CONFIG_DIR="/config" \
     WORKDIR="/app"
 RUN apt-get update
-RUN git clone -b main ${REPO_URL} ${WORKDIR}
+RUN git clone -b v3 ${REPO_URL} ${WORKDIR}
 WORKDIR ${WORKDIR}
 RUN pip3 install -r requirements.txt
 VOLUME ["/config"]
