@@ -59,8 +59,8 @@ class SubscribeShareService:
         # 查询数据库中是否存在
         sub = await SubscribeShare.read_by_id(db, share_id)
 
-        # 如果存在则删除
-        if sub and share_uid:
+        # 只有分享者本人（实例唯一ID一致）可以删除
+        if sub and share_uid and sub.share_uid == share_uid:
             await sub.delete(db, share_id)
             # 清除缓存
             cache_manager.share_cache.clear()

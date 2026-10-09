@@ -49,8 +49,8 @@ class WorkflowShareService:
         # 查询数据库中是否存在
         share = await WorkflowShare.read_by_id(db, share_id)
 
-        # 如果存在则删除
-        if share and share_uid:
+        # 只有分享者本人（实例唯一ID一致）可以删除
+        if share and share_uid and share.share_uid == share_uid:
             await share.delete(db, share_id)
             # 清除缓存
             cache_manager.workflow_share_cache.clear()
@@ -66,7 +66,12 @@ class WorkflowShareService:
 
         if cached_data is None:
             shares = await WorkflowShare.list(db, name=name, page=page, count=count)
-            cached_data = [sha.dict() for sha in shares]
+            cached_data = []
+            for sha in shares:
+                item = sha.dict()
+                # 历史数据中可能残留分享方写入的执行上下文，对外一律不下发
+                item["context"] = None
+                cached_data.append(item)
             cache_manager.workflow_share_cache.set(cache_key, cached_data)
 
         return cached_data

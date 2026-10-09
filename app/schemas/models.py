@@ -165,7 +165,7 @@ class WorkflowShareItem(BaseModel):
     timer: Optional[str] = None
     actions: Optional[str] = None  # JSON字符串
     flows: Optional[str] = None  # JSON字符串
-    context: Optional[str] = None  # JSON字符串
+    # 不接收 context：执行上下文是分享者本机的运行状态，复用方用不上，且内容不可信
     date: Optional[str] = None
 
 
