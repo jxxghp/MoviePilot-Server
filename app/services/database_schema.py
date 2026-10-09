@@ -215,13 +215,16 @@ def _ensure_subscribe_identity_schema(connection: Connection) -> None:
         for alias, source in MEDIA_SOURCE_ALIASES.items():
             connection.execute(text(
                 f'UPDATE "{table_name}" SET media_source = :source '
-                f'WHERE LOWER(TRIM(media_source)) = :alias'
+                f'WHERE LOWER(TRIM(media_source)) = :alias '
+                'AND media_source <> :source'
             ), {"source": source, "alias": alias})
 
         connection.execute(text(
             f'UPDATE "{table_name}" '
             'SET media_source = LOWER(TRIM(media_source)) '
-            'WHERE media_source IS NOT NULL'
+            # 只改写尚未规范的行，避免每次启动重写全表
+            'WHERE media_source IS NOT NULL '
+            'AND media_source <> LOWER(TRIM(media_source))'
         ))
 
         invalid_identity_sql = (
