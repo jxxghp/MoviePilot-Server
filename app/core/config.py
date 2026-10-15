@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     MP_ADMIN_USERS: str = ""
+    # 社区勋章全局开关，默认关闭；经 /user/features 对所有实例生效
+    COMMUNITY_MEDALS_ENABLED: bool = False
+    # 社区勋章预览名单，逗号分隔的 GitHub 用户名（不区分大小写）；为空表示无人预览，不是所有人
+    COMMUNITY_MEDALS_PREVIEW_USERS: str = ""
 
     # 服务器配置
     HOST: str = "0.0.0.0"
@@ -131,6 +135,15 @@ class Settings(BaseSettings):
     def media_recognize_share_redis_prefix(self) -> str:
         """共享识别缓存Redis前缀"""
         return f"{self.REDIS_KEY_PREFIX}:media_recognize_share"
+
+    @property
+    def community_medals_preview_users(self) -> set[str]:
+        """获取社区勋章预览名单的规范化 GitHub 用户名集合。"""
+        return {
+            item.strip().lower()
+            for item in self.COMMUNITY_MEDALS_PREVIEW_USERS.split(",")
+            if item.strip()
+        }
 
     @property
     def admin_users(self) -> set[str]:

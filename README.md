@@ -71,6 +71,8 @@ PostgreSQL、Redis 和服务端的完整编排示例见 [docker/docker-compose.y
 | `SERVER_TIMEOUT_KEEP_ALIVE` | `5` | HTTP Keep-Alive 超时（秒） |
 | `PORT` | `3001` | HTTP 监听端口 |
 | `MP_ADMIN_USERS` | 空 | 逗号分隔的管理员 GitHub 用户名 |
+| `COMMUNITY_MEDALS_ENABLED` | `false` | 是否向所有 MoviePilot 实例开放社区勋章，经 `GET /user/features` 下发 |
+| `COMMUNITY_MEDALS_PREVIEW_USERS` | 空 | 逗号分隔的 GitHub 用户名（不区分大小写），全局关闭时这些用户仍可预览社区勋章；为空表示无人预览 |
 
 生产环境建议使用 PostgreSQL 和 Redis，并通过反向代理启用 TLS。该服务只应接收 MoviePilot 约定的数据，不要通过分享或统计接口上传敏感内容。
 

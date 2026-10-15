@@ -85,6 +85,8 @@ services:
             - SERVER_BACKLOG=4096
             - SERVER_LIMIT_CONCURRENCY=512
             - SERVER_ACCESS_LOG=false
+            - COMMUNITY_MEDALS_ENABLED=false
+            - COMMUNITY_MEDALS_PREVIEW_USERS=
         ports:
             - target: 3001
               published: 3001
