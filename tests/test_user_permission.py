@@ -4,20 +4,35 @@ import asyncio
 
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.user import router as user_router
 from app.core.config import settings
+from app.db.deps import get_db
+from app.models import Base
 
 
 def _get(path: str, params: dict | None = None) -> dict:
     """挂载用户路由并请求指定接口。"""
 
     async def run() -> dict:
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+
+        async def isolated_db():
+            """提供独立数据库，验证未保存在线配置时的环境变量回退。"""
+            async with factory() as session:
+                yield session
+
         app = FastAPI()
+        app.dependency_overrides[get_db] = isolated_db
         app.include_router(user_router, prefix="/user")
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get(path, params=params or {})
+        await engine.dispose()
         assert response.status_code == 200
         return response.json()
 

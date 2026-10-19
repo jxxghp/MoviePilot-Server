@@ -1,0 +1,11 @@
+.git
+.venv
+venv
+**/__pycache__
+.pytest_cache
+.DS_Store
+.env
+*.db
+admin-ui/node_modules
+admin-ui/dist
+.artifacts

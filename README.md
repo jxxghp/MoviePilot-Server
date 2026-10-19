@@ -94,3 +94,11 @@ pytest tests
 ## 许可证
 
 许可证内容见 [docs/LICENSE](docs/LICENSE)。
+
+## 管理后台
+
+通过 `/admin/` 访问 Server 管理后台，支持多用户登录、超级管理员账号管理、统计查询、共享与评分管理、识别缓存、功能开关和维护审计。没有默认账号或公开注册入口。
+
+首次部署后执行 `docker exec -it moviepilot-server python -m app.admin.cli admin`，交互输入临时密码。后台需经 HTTPS 访问，Nginx 中转规则已加入 `docker/nginx.conf`；更新实际代理配置后先检查再重载。
+
+完整初始化、权限、配置、前端构建与部署说明见 [管理后台文档](docs/ADMIN.md)。

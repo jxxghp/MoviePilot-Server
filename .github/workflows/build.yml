@@ -6,6 +6,10 @@ on:
       - main
     paths:
       - app/**
+      - admin-ui/**
+      - tests/**
+      - requirements-dev.txt
+      - docker/nginx.conf
       - docker/Dockerfile
       - .github/workflows/build.yml
       - requirements.txt
@@ -16,7 +20,28 @@ permissions:
   packages: write
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: admin-ui/package-lock.json
+      - run: pip install -r requirements-dev.txt
+      - run: sudo apt-get update && sudo apt-get install -y nginx
+      - run: python -m pytest tests -q
+      - run: npm ci --no-audit --no-fund
+        working-directory: admin-ui
+      - run: npm test && npm run build
+        working-directory: admin-ui
+
   build:
+    needs: verify
     runs-on: ubuntu-latest
     name: Build Docker Image
     steps:

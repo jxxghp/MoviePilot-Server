@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     MP_ADMIN_USERS: str = ""
+    # 后台会话默认仅经 HTTPS 发送；本地 HTTP 调试需要显式关闭。
+    ADMIN_COOKIE_SECURE: bool = True
+    ADMIN_SESSION_HOURS: int = 8
+    ADMIN_LOGIN_ATTEMPTS: int = 10
+    ADMIN_LOGIN_WINDOW_SECONDS: int = 900
     # 社区勋章全局开关，默认关闭；经 /user/features 对所有实例生效
     COMMUNITY_MEDALS_ENABLED: bool = False
     # 社区勋章预览名单，逗号分隔的 GitHub 用户名（不区分大小写）；为空表示无人预览，不是所有人

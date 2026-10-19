@@ -18,6 +18,9 @@ from app.services.data_cleanup import data_cleanup_service
 from app.services.database_schema import ensure_database_schema
 from app.services.media_recognize_share import media_recognize_share_service
 from app.services.tmdb import tmdb_service
+from app.admin.api import router as admin_router
+from app.admin.static import install_admin_pages
+from app.admin.invalidation import admin_cache_invalidation
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +38,14 @@ async def lifespan(_: FastAPI):
 
     # 初始化Redis并启动共享识别缓存服务。
     await init_redis()
+    await admin_cache_invalidation.start()
     await media_recognize_share_service.start()
     await data_cleanup_service.start()
 
     yield
     # 关闭时清理资源
     await data_cleanup_service.stop()
+    await admin_cache_invalidation.stop()
     await media_recognize_share_service.stop()
     await tmdb_service.close()
     await close_redis()
@@ -76,6 +81,8 @@ async def redis_connection_error_handler(
 
 # 包含API路由（去掉全局前缀，直接挂载到根路径）
 App.include_router(api_router)
+App.include_router(admin_router)
+install_admin_pages(App)
 
 
 @App.get("/")

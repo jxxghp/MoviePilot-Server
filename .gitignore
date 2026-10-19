@@ -2,3 +2,10 @@ venv/
 .idea/
 .vscode/
 __pycache__/
+.venv/
+.pytest_cache/
+admin-ui/node_modules/
+admin-ui/dist/
+.env
+*.db
+.artifacts/

@@ -7,7 +7,7 @@ import logging
 from typing import Optional
 from uuid import uuid4
 
-from sqlalchemy import and_, delete, func, or_
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache_manager
@@ -15,6 +15,8 @@ from app.core.config import settings
 from app.db.database import AsyncSessionLocal
 from app.db.redis import get_redis
 from app.models import PluginStatistics, SubscribeShare, SubscribeStatistics
+from app.admin.audit import record
+from app.admin.invalidation import admin_cache_invalidation
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,9 @@ class DataCleanupService:
     _LOCK_TTL_SECONDS = 6 * 60 * 60
 
     def __init__(self):
+        """初始化清理任务句柄。"""
         self._task: Optional[asyncio.Task] = None
+        self.next_run: Optional[datetime] = None
 
     async def start(self):
         """
@@ -62,6 +66,7 @@ class DataCleanupService:
         """
         while True:
             next_run = self._next_midnight()
+            self.next_run = next_run
             delay = max((next_run - datetime.now()).total_seconds(), 1)
             logger.info("Next daily data cleanup scheduled at %s", next_run.strftime("%Y-%m-%d %H:%M:%S"))
             await asyncio.sleep(delay)
@@ -75,12 +80,10 @@ class DataCleanupService:
         now = datetime.now()
         return (now + timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
 
-    async def cleanup_once(self):
+    async def cleanup_once(self, actor: str = "scheduler") -> dict:
         """
         执行一次清理。
         """
-        plugin_cutoff = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
-        share_cutoff = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
         plugin_deleted = 0
         share_deleted = 0
         subscribe_deleted = 0
@@ -90,13 +93,18 @@ class DataCleanupService:
             lock_token = await self._acquire_cleanup_lock()
             if not lock_token:
                 logger.info("Daily data cleanup skipped because another worker is running it")
-                return
+                return {"status": "skipped", "message": "另一个清理任务正在执行"}
 
             async with AsyncSessionLocal() as db:
                 try:
-                    plugin_deleted = await self._cleanup_plugin_statistics(db, plugin_cutoff)
-                    share_deleted = await self._cleanup_subscribe_share(db, share_cutoff)
-                    subscribe_deleted = await self._cleanup_subscribe_statistics(db)
+                    counts = []
+                    for model, condition in self.cleanup_conditions():
+                        result = await db.execute(delete(model).where(condition))
+                        counts.append(result.rowcount or 0)
+                    plugin_deleted, share_deleted, subscribe_deleted = counts
+                    record(db, actor, "maintenance.cleanup", "success", {
+                        "plugins": plugin_deleted, "shares": share_deleted, "subscriptions": subscribe_deleted,
+                    })
                     await db.commit()
                 except Exception:
                     await db.rollback()
@@ -106,6 +114,8 @@ class DataCleanupService:
                 cache_manager.statistic_cache.clear()
             if share_deleted:
                 cache_manager.share_cache.clear()
+            if plugin_deleted or share_deleted or subscribe_deleted:
+                await admin_cache_invalidation.invalidate()
 
             logger.info(
                 "Daily data cleanup finished: plugin_statistics=%s, subscribe_share=%s, subscribe_statistics=%s",
@@ -113,13 +123,45 @@ class DataCleanupService:
                 share_deleted,
                 subscribe_deleted,
             )
+            return {"status": "success", "plugins": plugin_deleted, "shares": share_deleted, "subscriptions": subscribe_deleted}
         except asyncio.CancelledError:
             raise
         except Exception as err:
             logger.exception("Daily data cleanup failed: %s", err)
+            try:
+                async with AsyncSessionLocal() as db:
+                    record(db, actor, "maintenance.cleanup", "failed")
+                    await db.commit()
+            except Exception:
+                # 数据库本身故障时保留调度循环，避免因审计写入再次失败永久停调。
+                logger.warning("Cleanup failure audit could not be persisted")
+            return {"status": "failed", "message": "清理失败，请查看服务端日志"}
         finally:
             if lock_token:
                 await self._release_cleanup_lock(lock_token)
+
+    @staticmethod
+    def cleanup_conditions() -> list[tuple]:
+        """预览与执行共享同一组筛选条件，避免确认数量与实际规则不一致。"""
+        plugin_cutoff = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+        share_cutoff = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
+        year_value = func.trim(SubscribeStatistics.year)
+        return [
+            (PluginStatistics, and_(func.coalesce(PluginStatistics.count, 0) < 10, or_(
+                PluginStatistics.date.is_(None), func.trim(PluginStatistics.date) == "", PluginStatistics.date < plugin_cutoff,
+            ))),
+            (SubscribeShare, and_(SubscribeShare.date.is_not(None), func.trim(SubscribeShare.date) != "", SubscribeShare.date < share_cutoff)),
+            (SubscribeStatistics, or_(func.coalesce(SubscribeStatistics.count, 0) < 100, and_(
+                SubscribeStatistics.year.is_not(None), year_value != "", year_value < "2000",
+            ))),
+        ]
+
+    async def preview(self, db: AsyncSession) -> dict:
+        """只统计符合规则的行数，不执行删除。"""
+        counts = []
+        for model, condition in self.cleanup_conditions():
+            counts.append(await db.scalar(select(func.count()).select_from(model).where(condition)))
+        return dict(zip(("plugins", "shares", "subscriptions"), counts))
 
     @staticmethod
     def _cleanup_lock_key() -> str:
@@ -155,61 +197,6 @@ class DataCleanupService:
             await get_redis().eval(release_script, 1, self._cleanup_lock_key(), lock_token)
         except Exception as err:
             logger.warning("Daily data cleanup lock release failed: %s", err)
-
-    @staticmethod
-    async def _cleanup_plugin_statistics(db: AsyncSession, plugin_cutoff: str) -> int:
-        """
-        清理低频且长期未更新的插件统计数据。
-        """
-        result = await db.execute(
-            delete(PluginStatistics).where(
-                and_(
-                    func.coalesce(PluginStatistics.count, 0) < 10,
-                    or_(
-                        PluginStatistics.date.is_(None),
-                        func.trim(PluginStatistics.date) == "",
-                        PluginStatistics.date < plugin_cutoff,
-                    ),
-                )
-            )
-        )
-        return result.rowcount or 0
-
-    @staticmethod
-    async def _cleanup_subscribe_share(db: AsyncSession, share_cutoff: str) -> int:
-        """
-        清理一年前的订阅分享数据。
-        """
-        result = await db.execute(
-            delete(SubscribeShare).where(
-                and_(
-                    SubscribeShare.date.is_not(None),
-                    func.trim(SubscribeShare.date) != "",
-                    SubscribeShare.date < share_cutoff,
-                )
-            )
-        )
-        return result.rowcount or 0
-
-    @staticmethod
-    async def _cleanup_subscribe_statistics(db: AsyncSession) -> int:
-        """
-        清理低价值或脏的订阅统计数据。
-        """
-        year_value = func.trim(SubscribeStatistics.year)
-        result = await db.execute(
-            delete(SubscribeStatistics).where(
-                or_(
-                    func.coalesce(SubscribeStatistics.count, 0) < 100,
-                    and_(
-                        SubscribeStatistics.year.is_not(None),
-                        year_value != "",
-                        year_value < "2000",
-                    ),
-                )
-            )
-        )
-        return result.rowcount or 0
 
 
 data_cleanup_service = DataCleanupService()

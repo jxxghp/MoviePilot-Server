@@ -75,8 +75,8 @@ services:
             - DB_POOL_SIZE=8
             - DB_MAX_OVERFLOW=2
             - CONFIG_DIR=/config
-            - REDIS_HOST=localhost
-            - REDIS_PORT=6380
+            - REDIS_HOST=redis
+            - REDIS_PORT=6379
             - REDIS_DB=0
             - REDIS_PASSWORD=${REDIS_PASSWORD:-moviepilot_redis_password}
             - REDIS_MAX_CONNECTIONS=256
@@ -85,6 +85,10 @@ services:
             - SERVER_BACKLOG=4096
             - SERVER_LIMIT_CONCURRENCY=512
             - SERVER_ACCESS_LOG=false
+            - ADMIN_COOKIE_SECURE=true
+            - ADMIN_SESSION_HOURS=8
+            - ADMIN_LOGIN_ATTEMPTS=10
+            - ADMIN_LOGIN_WINDOW_SECONDS=900
             - COMMUNITY_MEDALS_ENABLED=false
             - COMMUNITY_MEDALS_PREVIEW_USERS=
         ports:
