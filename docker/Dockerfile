@@ -5,15 +5,20 @@ RUN npm ci --no-audit --no-fund
 COPY admin-ui/ ./
 RUN npm run build
 
-FROM python:3.11.9-bullseye
+FROM python:3.11-slim-trixie
 ENV LANG="C.UTF-8" \
     TZ="Asia/Shanghai" \
     REPO_URL="https://github.com/jxxghp/MoviePilot-Server.git" \
     CONFIG_DIR="/config" \
     WORKDIR="/app"
 WORKDIR ${WORKDIR}
+# 显式更新系统根证书包，确保已移除被吊销的 CA（如 emSign ECC Root CA - G3）
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt ./
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip3 install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 COPY main.py ./
 COPY --from=admin-builder /build/admin-ui/dist ./admin-ui/dist
