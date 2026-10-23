@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+  <title>MoviePilot 通知</title>
+  <script src="app.js" defer></script>
+</head>
+<body><main>
+  <img src="icon.svg" alt="" width="64" height="64">
+  <h1>MoviePilot 通知</h1>
+  <p>接收下载、入库和订阅提醒。</p>
+  <section id="setup">
+    <p id="install">iPhone：先在 Safari 分享菜单选择“添加到主屏幕”，再从主屏幕打开并绑定。</p>
+    <label for="code">App 中生成的绑定码</label>
+    <input id="code" maxlength="128" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="粘贴十分钟内有效的绑定码">
+    <button id="bind">绑定并允许通知</button>
+  </section>
+  <section id="connected" hidden>
+    <p id="instance"></p>
+    <button id="test">发送测试通知</button>
+    <button id="remove" class="secondary">解除绑定</button>
+  </section>
+  <section id="message" hidden>
+    <h2>查看消息</h2>
+    <a id="open-app" class="button">在 App 中查看</a>
+    <a id="open-web" class="secondary button">在网页中查看</a>
+  </section>
+  <p id="status" role="status" aria-live="polite"></p>
+  <p class="note">通知由主屏幕网页接收。删除网页或关闭系统通知后，需要重新绑定；App 的登录状态单独管理。</p>
+</main></body>
+</html>

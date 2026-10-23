@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     # 社区勋章预览名单，逗号分隔的 GitHub 用户名（不区分大小写）；为空表示无人预览，不是所有人
     COMMUNITY_MEDALS_PREVIEW_USERS: str = ""
 
+    # 每个 MoviePilot 实例使用独立的随机中转密钥，逗号分隔；为空时关闭私有推送。
+    PUSH_RELAY_KEYS: str = ""
+    PUSH_VAPID_KEY_FILE: str = ""
+    PUSH_VAPID_SUBJECT: str = ""
+    PUSH_APNS_KEY_FILE: str = ""
+    PUSH_APNS_TEAM_ID: str = ""
+    PUSH_APNS_KEY_ID: str = ""
+    PUSH_APNS_TOPICS: str = ""
+
     # 服务器配置
     HOST: str = "0.0.0.0"
     PORT: int = 3001

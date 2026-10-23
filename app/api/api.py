@@ -7,6 +7,7 @@ from app.api import (
     media_recognize_share,
     plugin_rating,
     plugin_statistic,
+    push,
     subscribe_statistic,
     subscribe_share,
     usage_statistic,
@@ -16,6 +17,7 @@ from app.api import (
 )
 
 api_router = APIRouter()
+api_router.include_router(push.router, prefix="/push", tags=["push"])
 
 # 包含各个模块的路由
 api_router.include_router(plugin_statistic.router, prefix="/plugin", tags=["plugin-statistic"])

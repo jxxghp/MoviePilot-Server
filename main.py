@@ -18,6 +18,7 @@ from app.services.data_cleanup import data_cleanup_service
 from app.services.database_schema import ensure_database_schema
 from app.services.media_recognize_share import media_recognize_share_service
 from app.services.tmdb import tmdb_service
+from app.services.push.delivery import push_delivery
 from app.admin.api import router as admin_router
 from app.admin.static import install_admin_pages
 from app.admin.invalidation import admin_cache_invalidation
@@ -48,6 +49,7 @@ async def lifespan(_: FastAPI):
     await admin_cache_invalidation.stop()
     await media_recognize_share_service.stop()
     await tmdb_service.close()
+    await push_delivery.close()
     await close_redis()
     await engine.dispose()
 
