@@ -1,4 +1,4 @@
-"""通过实际 Nginx 验证管理路径、静态资源和 API 不落入官网回退或缓存。"""
+"""通过实际 Nginx 验证管理、推送路径及资源不落入官网回退或缓存。"""
 
 import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -21,13 +21,15 @@ def free_port() -> int:
 
 
 class EchoBackend(BaseHTTPRequestHandler):
-    """返回收到的原始路径，以证明 Nginx 未丢失管理入口前缀与查询参数。"""
+    """回显原始路径与测试请求头，验证私有入口的代理和防缓存边界。"""
 
     def do_GET(self):
-        """模拟上游响应和可被覆盖的缓存头。"""
-        self.send_response(200)
+        """模拟成功或鉴权拒绝响应，并回显代理收到的认证与来源信息。"""
+        self.send_response(401 if self.path.endswith("/unauthorized") else 200)
         self.send_header("Content-Type", "text/plain")
         self.send_header("Cache-Control", "public, max-age=900")
+        self.send_header("X-Echo-Authorization", self.headers.get("Authorization", ""))
+        self.send_header("X-Echo-Forwarded-For", self.headers.get("X-Forwarded-For", ""))
         self.end_headers()
         self.wfile.write(self.path.encode())
 
@@ -35,13 +37,14 @@ class EchoBackend(BaseHTTPRequestHandler):
         """测试中不输出每个代理请求的访问日志。"""
 
 
-def test_real_nginx_preserves_admin_routes(tmp_path):
-    """使用仓库原样管理 location，实际发送页面、API、JS 和官网请求。"""
+@pytest.mark.parametrize("prefix", ["admin", "push"])
+def test_real_nginx_preserves_private_routes(tmp_path, prefix):
+    """使用仓库原样 location，实测私有路径、静态资源、认证头和错误防缓存。"""
     nginx = shutil.which("nginx")
     if not nginx:
         pytest.skip("本机未安装 Nginx")
     source = (Path(__file__).parents[1] / "docker/nginx.conf").read_text()
-    blocks = re.findall(r"\t\tlocation (?:= /admin|\^~ /admin/) \{.*?\n\t\t\}", source, re.S)
+    blocks = re.findall(rf"\t\tlocation (?:= /{prefix}|\^~ /{prefix}/) \{{.*?\n\t\t\}}", source, re.S)
     assert len(blocks) == 2
     backend = ThreadingHTTPServer(("127.0.0.1", 0), EchoBackend)
     thread = threading.Thread(target=backend.serve_forever, daemon=True)
@@ -83,18 +86,24 @@ def test_real_nginx_preserves_admin_routes(tmp_path):
                 time.sleep(0.05)
         else:
             pytest.fail("隔离 Nginx 未启动")
-        for path in ("/admin/", "/admin/users", "/admin/api/auth/me?check=1", "/admin/assets/main.js", "/admin/logo.png"):
+        for suffix in ("/", "/users", "/api/auth/me?check=1", "/assets/main.js", "/logo.png", "/app/worker.js", "/unauthorized"):
+            path = f"/{prefix}{suffix}"
             connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
-            connection.request("GET", path)
+            connection.request("GET", path, headers={
+                "Authorization": "Bearer test-private-credential", "X-Forwarded-For": "198.51.100.23",
+            })
             response = connection.getresponse()
-            assert response.status == 200
+            assert response.status == (401 if suffix == "/unauthorized" else 200)
             assert response.read().decode() == path
             assert response.getheader("Cache-Control") == "no-store"
+            assert response.getheader("X-Echo-Authorization") == "Bearer test-private-credential"
+            if prefix == "push":
+                assert response.getheader("X-Echo-Forwarded-For") == "127.0.0.1"
             connection.close()
         connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
-        connection.request("GET", "/admin")
+        connection.request("GET", f"/{prefix}")
         response = connection.getresponse()
-        assert response.status == 308 and response.getheader("Location").endswith("/admin/")
+        assert response.status == 308 and response.getheader("Location").endswith(f"/{prefix}/")
         response.read()
         connection.close()
     finally:
