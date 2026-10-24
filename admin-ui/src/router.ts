@@ -8,6 +8,7 @@ import Recognition from '@/pages/Recognition.vue'
 import Features from '@/pages/Features.vue'
 import System from '@/pages/System.vue'
 import Users from '@/pages/Users.vue'
+import Push from '@/pages/Push.vue'
 import { notify } from '@/api'
 
 export const router = createRouter({
@@ -25,6 +26,7 @@ export const router = createRouter({
       { path: 'features', component: Features, meta: { title: '权限与功能' } },
       { path: 'system', component: System, meta: { title: '服务与维护' } },
       { path: 'users', component: Users, meta: { title: '用户管理', super: true } },
+      { path: 'push', component: Push, meta: { title: '推送实例', super: true } },
       { path: 'audit', component: DataPage, meta: { title: '操作记录', kind: 'audit' } },
     ] },
     { path: '/:pathMatch(.*)*', redirect: '/overview' },

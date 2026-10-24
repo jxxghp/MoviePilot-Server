@@ -17,6 +17,7 @@ const allNav = [
   { path: '/plugins', label: '插件数据', icon: Puzzle }, { path: '/recognition', label: '识别缓存', icon: Database },
   { path: '/features', label: '权限与功能', icon: ShieldCheck }, { path: '/system', label: '服务与维护', icon: Settings2 },
   { path: '/users', label: '用户管理', icon: Users, super: true }, { path: '/audit', label: '操作记录', icon: History },
+  { path: '/push', label: '推送实例', icon: ShieldCheck, super: true },
 ]
 const nav = computed(() => allNav.filter(item => !item.super || auth.user?.role === 'super_admin'))
 /** 明确撤销服务端会话；网络失败时保留错误反馈。 */

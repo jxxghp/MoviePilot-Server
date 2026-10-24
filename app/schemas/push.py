@@ -8,6 +8,24 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
+class PushEnrollment(BaseModel):
+    """
+    首次登记容器来源，不允许用 UID 指定已有实例空间或替换他人的密钥。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    user_uid: str = Field(min_length=16, max_length=128, pattern=r"^[a-zA-Z0-9_-]+$", description="既有 MoviePilot 用户唯一 ID，仅关联来源，不作为身份验证")
+
+
+class PushRotation(BaseModel):
+    """
+    已持有当前凭据的容器提交先行持久化的新随机凭据，支持响应丢失后重试。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    key: str = Field(pattern=r"^mpa_[a-zA-Z0-9_-]{43}$", description="容器安全随机生成的256位新凭据，仅经 HTTPS 正文提交")
+
+
 class PushOwner(BaseModel):
     """
     后端鉴权后提交的稳定用户身份及精确实例地址。

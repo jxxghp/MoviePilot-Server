@@ -76,3 +76,11 @@ class CacheDeletePayload(ConfirmPayload):
     """仅允许删除共享识别命名空间内的精确缓存键。"""
 
     key: str = Field(min_length=1, max_length=4096)
+
+
+class PushStatePayload(ConfirmPayload):
+    """
+    运营者明确确认后停用或恢复一个推送实例，不接受密钥字段。
+    """
+
+    enabled: bool = Field(description="是否恢复该实例已有凭据的权限")

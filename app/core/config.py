@@ -54,8 +54,12 @@ class Settings(BaseSettings):
     # 社区勋章预览名单，逗号分隔的 GitHub 用户名（不区分大小写）；为空表示无人预览，不是所有人
     COMMUNITY_MEDALS_PREVIEW_USERS: str = ""
 
-    # 每个 MoviePilot 实例使用独立的随机中转密钥，逗号分隔；为空时关闭私有推送。
+    # 兼容手工接入：每个 MoviePilot 实例使用独立随机密钥，逗号分隔；为空不影响自动接入。
     PUSH_RELAY_KEYS: str = ""
+    # 自动接入显式开启；关闭后不撤销已登记实例，便于运维止住新注册。
+    PUSH_AUTO_REGISTER: bool = False
+    PUSH_REGISTRATION_PER_HOUR: int = 10
+    PUSH_REGISTRATION_GLOBAL_PER_HOUR: int = 1000
     PUSH_VAPID_KEY_FILE: str = ""
     PUSH_VAPID_SUBJECT: str = ""
     PUSH_APNS_KEY_FILE: str = ""

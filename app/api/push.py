@@ -11,14 +11,14 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.deps import get_db
-from app.models.push import PushDevice
-from app.schemas.push import PushMessage, PushPairing, PushRegistration, PushRemoval, WebManagement, WebRegistration
+from app.models.push import PushDevice, PushRelay
+from app.schemas.push import PushEnrollment, PushMessage, PushPairing, PushRegistration, PushRemoval, PushRotation, WebManagement, WebRegistration
 from app.services.push.delivery import PushDelivery, push_delivery
+from app.services.push.enrollment import authenticated_relay, enroll, rotate
 from app.services.push.registry import (
     binding_lock, claim_pairing, create_pairing, devices_for_owner, digest, prune_revision, rate_limit, remove_device, save_device,
 )
@@ -42,27 +42,74 @@ def get_delivery() -> PushDelivery:
     return push_delivery
 
 
-async def relay_namespace(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)) -> str:
+async def relay_namespace(request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+                          db: AsyncSession = Depends(get_db)) -> str:
     """
     中转密钥只供 MoviePilot 后端使用，每个独立密钥形成独立数据空间。
     """
-    keys = [item.strip() for item in settings.PUSH_RELAY_KEYS.split(",") if len(item.strip()) >= 32]
-    if not keys:
-        raise HTTPException(503, "私有推送尚未启用")
+    await rate_limit("auth:" + request_address(request), 240)
     if not credentials or credentials.scheme.lower() != "bearer":
         raise HTTPException(401, "需要中转凭据")
-    if not any(hmac.compare_digest(credentials.credentials.encode(), key.encode()) for key in keys):
-        raise HTTPException(401, "中转凭据无效")
-    namespace = digest(credentials.credentials)
+    keys = [item.strip() for item in settings.PUSH_RELAY_KEYS.split(",") if len(item.strip()) >= 32]
+    supplied = credentials.credentials
+    namespace = (digest(supplied) if any(hmac.compare_digest(supplied.encode(), key.encode()) for key in keys)
+                 else await authenticated_relay(db, supplied))
     await rate_limit(namespace)
     return namespace
+
+
+def request_address(request: Request) -> str:
+    """
+    使用 ASGI 框架已验证的来源，不直接信任任意请求中的转发头。
+    """
+    return request.client.host if request.client else "unknown"
 
 
 async def anonymous_limit(request: Request) -> None:
     """
     未绑定接口按实际连接地址限流，不信任客户端自行提交的转发头。
     """
-    await rate_limit("anonymous:" + (request.client.host if request.client else "unknown"), 30)
+    await rate_limit("anonymous:" + request_address(request), 30)
+
+
+def enrollment_key(credentials: HTTPAuthorizationCredentials | None) -> str:
+    """
+    登记和轮换只从请求头提取凭据，缺失时不返回额外身份信息。
+    """
+    if not credentials or credentials.scheme.lower() != "bearer":
+        raise HTTPException(401, "需要实例凭据")
+    return credentials.credentials
+
+
+@router.post("/instances", dependencies=[Depends(anonymous_limit)])
+async def enroll_instance(body: PushEnrollment, request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+                          db: AsyncSession = Depends(get_db)):
+    """
+    幂等登记容器先行保存的随机凭据；相同 UID 不能认领已有空间。
+    """
+    return await enroll(db, enrollment_key(credentials), body.user_uid, request_address(request))
+
+
+@router.put("/instances/credentials", dependencies=[Depends(anonymous_limit)])
+async def rotate_instance(body: PushRotation, credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+                          db: AsyncSession = Depends(get_db)):
+    """
+    原子轮换已登记实例的凭据，响应丢失可凭旧、新凭据重试相同请求。
+    """
+    return await rotate(db, enrollment_key(credentials), body.key)
+
+
+@router.delete("/instances")
+async def revoke_instance(namespace: str = Depends(relay_namespace), db: AsyncSession = Depends(get_db)):
+    """
+    当前实例停用自身空间，只有中心运营者能恢复，旧凭据不能自行重新登记。
+    """
+    relay = await db.get(PushRelay, namespace)
+    if not relay:
+        raise HTTPException(409, "手工接入凭据请由中心运营者撤销")
+    relay.enabled = False
+    await db.commit()
+    return {"revoked": True}
 
 
 @router.get("/config")
@@ -74,7 +121,7 @@ async def configuration(delivery: PushDelivery = Depends(get_delivery)):
         public_key = await asyncio.to_thread(delivery.public_key)
     except (OSError, ValueError, TypeError):
         public_key = ""
-    return {"webpush": bool(public_key and settings.PUSH_RELAY_KEYS), "vapid_public_key": public_key}
+    return {"webpush": bool(public_key), "vapid_public_key": public_key, "automatic_registration": settings.PUSH_AUTO_REGISTER}
 
 
 @router.post("/devices")
@@ -129,6 +176,7 @@ async def subscribe(body: WebRegistration, db: AsyncSession = Depends(get_db)):
     """
     secret = secrets.token_urlsafe(32)
     async with claim_pairing(body.code) as binding:
+        await require_enabled_namespace(db, binding["namespace"])
         device = await save_device(db, {**binding, "installation": body.installation, "transport": "webpush",
                                     "destination": json.dumps(body.subscription.model_dump(exclude_none=True)),
                                         "secret_hash": digest(secret), "topic": "", "environment": ""})
@@ -143,6 +191,15 @@ async def managed_device(body: WebManagement, db: AsyncSession) -> PushDevice:
     if not device or device.transport != "webpush" or not hmac.compare_digest(device.secret_hash, digest(body.secret)):
         raise HTTPException(404, "通知绑定不存在")
     return device
+
+
+async def require_enabled_namespace(db: AsyncSession, namespace: str) -> None:
+    """
+    已吊销实例的网页能力不能继续绑定或发送测试；解绑仍然可用。
+    """
+    relay = await db.get(PushRelay, namespace) if len(namespace) == 32 else None
+    if relay and not relay.enabled:
+        raise HTTPException(403, "通知实例已停用")
 
 
 @router.delete("/subscriptions", dependencies=[Depends(anonymous_limit)])
@@ -161,6 +218,7 @@ async def test_subscription(body: WebManagement, db: AsyncSession = Depends(get_
     仅向本设备发送固定测试通知，不能借此指定别人或提交任意消息。
     """
     device = await managed_device(body, db)
+    await require_enabled_namespace(db, device.namespace)
     accepted, gone, reason = await delivery.send(device, PushMessage(owner=device.owner, title="MoviePilot 测试通知", body="通知服务已连接"))
     if gone:
         await prune_revision(db, device)

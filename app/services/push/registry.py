@@ -27,18 +27,22 @@ def digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-async def rate_limit(key: str, maximum: int = 60) -> None:
+async def rate_limit(key: str, maximum: int = 60, window: int = 60) -> None:
     """
-    多 worker 共用 Redis 分钟配额，过载时拒绝而不是绕过配额。
+    多 worker 共用 Redis 时间窗配额，过载时拒绝而不是绕过配额。
+
+    :param key: 配额所属操作与调用方标识，Redis 键仅保存摘要
+    :param maximum: 一个时间窗内允许的最大请求数
+    :param window: 时间窗秒数，普通请求默认一分钟，登记与轮换使用一小时
     """
     redis = get_redis()
-    bucket = f"push:rate:{digest(key)}:{int(time.time()) // 60}"
+    bucket = f"push:rate:{digest(key)}:{window}:{int(time.time()) // window}"
     async with redis.pipeline(transaction=True) as pipeline:
         pipeline.incr(bucket)
-        pipeline.expire(bucket, 120)
+        pipeline.expire(bucket, window * 2)
         results = await pipeline.execute()
     if results[0] > maximum:
-        raise HTTPException(429, "请求过于频繁，请稍后重试", headers={"Retry-After": "60"})
+        raise HTTPException(429, "请求过于频繁，请稍后重试", headers={"Retry-After": str(window)})
 
 
 async def create_pairing(namespace: str, owner: str, origin: str, installation: str) -> str:

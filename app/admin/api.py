@@ -5,12 +5,12 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.admin import auth, config, data, system, users
+from app.admin import auth, config, data, push, system, users
 from app.admin.audit import record, user_dict
 from app.admin.auth import AdminIdentity, administrator, current_identity, super_administrator
 from app.admin.schemas import (
     CacheDeletePayload, ChangePasswordPayload, ConfirmPayload, CreateUserPayload, FeaturesPayload,
-    LoginPayload, ResetPasswordPayload, UpdateUserPayload,
+    LoginPayload, PushStatePayload, ResetPasswordPayload, UpdateUserPayload,
 )
 from app.db.deps import get_db
 from app.db.redis import get_redis
@@ -18,6 +18,26 @@ from app.models.admin import AdminUser
 from app.services.data_cleanup import data_cleanup_service
 
 router = APIRouter(prefix="/admin/api", tags=["admin"])
+
+
+@router.get("/push/instances")
+async def list_push_instances(q: str = Query("", max_length=128), page: int = Query(1, ge=1),
+                              size: int = Query(30, ge=1, le=100), _: AdminIdentity = Depends(super_administrator),
+                              db: AsyncSession = Depends(get_db)):
+    """
+    超级管理员查看自动登记的推送实例和状态，不下发凭据或推送地址。
+    """
+    return await push.list_relays(db, q, page, size)
+
+
+@router.patch("/push/instances/{instance}")
+async def change_push_instance(instance: str, payload: PushStatePayload, identity: AdminIdentity = Depends(super_administrator),
+                               db: AsyncSession = Depends(get_db)):
+    """
+    已有管理员会话、CSRF和确认文字共同保护实例停用与恢复操作。
+    """
+    require_confirmation(payload, "启用" if payload.enabled else "停用")
+    return await push.set_enabled(db, instance, payload.enabled, identity.user)
 
 
 @router.post("/auth/login")
