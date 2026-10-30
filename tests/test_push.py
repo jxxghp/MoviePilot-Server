@@ -9,6 +9,7 @@ from pathlib import Path
 import fakeredis.aioredis
 import httpx
 import jwt
+import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import FastAPI
@@ -361,7 +362,41 @@ def test_webpush_encrypts_payload_and_signs_vapid_without_real_network(monkeypat
 
     monkeypatch.setattr(requests, 'post', post)
     delivery = PushDelivery(Settings(PUSH_VAPID_KEY_FILE=str(key_path), PUSH_VAPID_SUBJECT='mailto:admin@example.com'))
-    assert delivery._send_web(device, PushMessage(owner=OWNER_A, title='下载完成', body='中文通知', route='/history'))[0]
+    image = 'https://images.example.com/poster.jpg'
+    assert delivery._send_web(device, PushMessage(owner=OWNER_A, title='下载完成', body='中文通知', route='/history', image=image))[0]
     assert observed[0]['owner'] == OWNER_A
     assert observed[0]['url'] == 'https://moviepilot.test/base/#/history'
     assert observed[0]['body'] == '中文通知'
+    assert observed[0]['image'] == image
+
+
+@pytest.mark.parametrize('image', ['javascript:alert(1)', 'data:image/png;base64,AA', '/poster.jpg',
+                                  'file:///private/poster.png', 'https://user:secret@images.test/poster.jpg',
+                                  'https://images.test/\\poster.jpg', 'https://images.test/\nposter.jpg'])
+def test_push_message_rejects_unsafe_images(image):
+    """
+    图片只允许无凭据网页地址，不将脚本、文件及畸形地址交给接收设备。
+    """
+    with pytest.raises(ValueError):
+        PushMessage(owner=OWNER_A, image=image)
+    assert PushMessage(owner=OWNER_A).image is None
+
+
+def test_notification_page_allows_posters_without_allowing_remote_scripts(monkeypatch, tmp_path):
+    """
+    实际静态响应允许设备加载海报，脚本仍限定同源且不缓存通知内容。
+    """
+    async def scenario(client, _factory, _delivery, _redis):
+        """
+        校验公开详情页和 worker 的响应头，不连接真实图片服务器。
+        """
+        for asset in ('', 'app.js', 'worker.js'):
+            response = await client.get('/push/app/' + asset)
+            assert response.status_code == 200
+            policy = response.headers['content-security-policy']
+            assert "default-src 'self';" in policy
+            assert "img-src 'self' data: https: http:;" in policy
+            assert "object-src 'none'" in policy
+            assert response.headers['referrer-policy'] == 'no-referrer'
+            assert response.headers['cache-control'] == 'no-cache'
+    run_scenario(monkeypatch, tmp_path, scenario)

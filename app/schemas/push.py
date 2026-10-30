@@ -86,6 +86,22 @@ class PushMessage(BaseModel):
     title: str = Field(default="MoviePilot", max_length=256, description="通知标题")
     body: str = Field(default="", max_length=3000, description="纯文本消息正文")
     route: str = Field(default="/?shotcut=message", max_length=2048, description="实例内跳转路由")
+    image: str | None = Field(default=None, max_length=2048, description="由接收设备加载的 HTTP(S) 海报地址，旧客户端可不提供")
+
+    @field_validator("image")
+    @classmethod
+    def validate_image(cls, value: str | None) -> str | None:
+        """
+        只传递无凭据的网页图片，不允许脚本、内嵌文档或本地文件引用。
+        """
+        if value is None:
+            return None
+        parsed = urlsplit(value)
+        if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                or parsed.username is not None or parsed.password is not None
+                or "\\" in value or any(ord(char) <= 32 or ord(char) == 127 for char in value)):
+            raise ValueError("海报必须是无凭据的 HTTP(S) 地址")
+        return value
 
     @field_validator("route")
     @classmethod

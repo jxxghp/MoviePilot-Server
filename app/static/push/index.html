@@ -15,6 +15,13 @@
   <img src="icon.svg" alt="" width="64" height="64">
   <h1>MoviePilot 通知</h1>
   <p>接收下载、入库和订阅提醒。</p>
+  <section id="message" hidden>
+    <h2 id="message-title">消息详情</h2>
+    <img id="message-image" alt="消息海报" referrerpolicy="no-referrer" decoding="async" hidden>
+    <p id="message-body"></p>
+    <a id="open-app" class="button">在 MoviePilot App 中打开</a>
+    <a id="open-web" class="secondary button">在 MoviePilot 网页中查看</a>
+  </section>
   <section id="setup">
     <p id="install">iPhone：先在 Safari 分享菜单选择“添加到主屏幕”，再从主屏幕打开并绑定。</p>
     <label for="code">App 中生成的绑定码</label>
@@ -25,11 +32,6 @@
     <p id="instance"></p>
     <button id="test">发送测试通知</button>
     <button id="remove" class="secondary">解除绑定</button>
-  </section>
-  <section id="message" hidden>
-    <h2>查看消息</h2>
-    <a id="open-app" class="button">在 App 中查看</a>
-    <a id="open-web" class="secondary button">在网页中查看</a>
   </section>
   <p id="status" role="status" aria-live="polite"></p>
   <p class="note">通知由主屏幕网页接收。删除网页或关闭系统通知后，需要重新绑定；App 的登录状态单独管理。</p>

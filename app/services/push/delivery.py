@@ -123,6 +123,8 @@ class PushDelivery:
         payload = {"title": message.title, "body": message.body,
                    "url": device.origin + "/#" + message.route, "origin": device.origin,
                    "route": message.route, "owner": device.owner}
+        if message.image:
+            payload["image"] = message.image
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         if len(encoded.encode()) > 3800:
             return False, False, "通知超过 Web Push 大小上限"
