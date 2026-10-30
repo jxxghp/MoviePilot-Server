@@ -28,7 +28,10 @@ async function api(path, body, method = 'POST') {
 /** 刷新本机绑定状态，地址采用文本渲染。 */
 function render() {
   element('connected').hidden = !binding; element('setup').hidden = !!binding;
-  if (!binding) { element('message').hidden = true; element('settings').hidden = false; }
+  if (!binding) {
+    element('message').hidden = true; element('settings').hidden = false;
+    element('intro').hidden = false; element('back').hidden = true;
+  }
   element('instance').textContent = binding ? '已连接 ' + binding.origin : '';
 }
 /** 将 VAPID 公钥转换为浏览器订阅需要的字节序列。 */
@@ -135,6 +138,7 @@ async function openMessage(identifier = '') {
     if (revision !== messageRevision) return;
     clearMessage();
     element('message').hidden = false; element('settings').hidden = true;
+    element('intro').hidden = true; element('back').hidden = false;
     element('message-title').textContent = '正在加载消息';
     id ||= record.data.id || '';
     messageId = id;
@@ -163,6 +167,7 @@ async function openMessage(identifier = '') {
   } catch (error) {
     if (revision !== messageRevision) return;
     clearMessage(); element('message').hidden = false; element('settings').hidden = true;
+    element('intro').hidden = true; element('back').hidden = false;
     element('message-title').textContent = '消息暂时无法打开';
     element('message-body').textContent = error.message || '请进入 MoviePilot App 查看消息';
     element('retry').hidden = false;

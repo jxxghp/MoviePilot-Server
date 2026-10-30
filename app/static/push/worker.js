@@ -1,6 +1,6 @@
 /* 静态缓存不含账号与绑定响应；通知交接使用独立、有界的私有暂存。 */
 importScripts('messages.js');
-const CACHE = 'moviepilot-notifications-v5';
+const CACHE = 'moviepilot-notifications-v6';
 const ASSETS = ['./', './style.css', './app.js', './messages.js', './icon.svg', './icon.png', './manifest.webmanifest'];
 // 新旧消息格式兼容；静态更新接管现有绑定，不要求用户重新订阅。
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())));
@@ -11,7 +11,7 @@ self.addEventListener('activate', event => event.waitUntil((async () => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method === 'GET' && url.origin === self.location.origin && ASSETS.some(asset => new URL(asset, self.registration.scope).pathname === url.pathname)) {
-    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+    event.respondWith(fetch(event.request).catch(() => caches.match(url.origin + url.pathname)));
   }
 });
 self.addEventListener('push', event => event.waitUntil((async () => {
