@@ -5,6 +5,7 @@ const { readFileSync } = require('node:fs');
 const { resolve } = require('node:path');
 const { randomUUID } = require('node:crypto');
 const vm = require('node:vm');
+const { MessageChannel } = require('node:worker_threads');
 const assets = resolve(__dirname, '../app/static/push');
 const scope = 'https://relay.test/push/app/';
 const binding = { id: 'd'.repeat(32), secret: 's'.repeat(43), origin: 'https://moviepilot.test/base', owner: 'a'.repeat(32) };
@@ -54,22 +55,30 @@ class Element {
 function script(context, file) { return vm.runInContext(readFileSync(resolve(assets, file), 'utf8'), context); }
 
 /** 按真实 HTML 建立 DOM，并等待真实启动读取结束。 */
-async function page({ data, bound = binding, cache = storage(), url = scope, fetcher, subscription = null, blockedLocal = false } = {}) {
+async function page({ data, bound = binding, cache = storage(), url = scope, fetcher, subscription = null, blockedLocal = false, waitForInitial = true, timers = { setTimeout, clearTimeout } } = {}) {
   const html = readFileSync(resolve(assets, 'index.html'), 'utf8');
   const elements = Object.fromEntries([...html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)].map(match => {
     const element = new Element(); element.hidden = /\bhidden\b/.test(match[0]); return [match[1], element];
   }));
   const windowEvents = {}, documentEvents = {}, workerEvents = {};
+  const transitions = [];
+  for (const [id, element] of Object.entries(elements)) {
+    let hidden = element.hidden;
+    Object.defineProperty(element, 'hidden', {
+      get: () => hidden,
+      set: value => { if (hidden !== value) transitions.push({ id, hidden: value }); hidden = value; },
+    });
+  }
   const location = new URL(url);
   if (data !== undefined) location.hash = 'open=' + encodeURIComponent(JSON.stringify(data));
   const updates = [], requests = [];
   const local = new Map([['moviepilot.push.binding', JSON.stringify(bound)], ['moviepilot.push.installation', 'installation-001']]);
   const context = vm.createContext({
-    URL, URLSearchParams, location, caches: cache, Response, crypto: { randomUUID }, self: {},
+    URL, URLSearchParams, location, caches: cache, Response, AbortController, ...timers, crypto: { randomUUID }, self: {},
     fetch: async (url, options) => {
       requests.push({ url, ...options, body: JSON.parse(options.body) });
       if (!fetcher) throw new Error('离线');
-      return fetcher(url, JSON.parse(options.body));
+      return fetcher(url, JSON.parse(options.body), options);
     },
     history: { replaceState: (_state, _title, path) => { location.href = new URL(path, location).href; } },
     localStorage: {
@@ -86,14 +95,16 @@ async function page({ data, bound = binding, cache = storage(), url = scope, fet
     } },
   });
   script(context, 'messages.js'); script(context, 'app.js');
-  await vm.runInContext('initialMessage', context);
-  return { elements, context, location, windowEvents, documentEvents, workerEvents, updates, requests, local };
+  const ready = vm.runInContext('initialMessage', context);
+  if (waitForInitial) await ready;
+  return { elements, context, location, windowEvents, documentEvents, workerEvents, updates, requests, local, ready, transitions };
 }
 
 /** worker 使用页面同源缓存，窗口行为按用例注入。 */
 function worker(cache = storage(), clients = {}) {
   const handlers = {}, shown = [];
-  const context = vm.createContext({ URL, caches: cache, Response, crypto: { randomUUID }, self: {
+  const context = vm.createContext({ URL, caches: cache, Response, MessageChannel, setTimeout, clearTimeout, crypto: { randomUUID }, self: {
+    location: new URL(scope + 'worker.js'),
     addEventListener: (name, callback) => { handlers[name] = callback; },
     registration: { scope, showNotification: async (title, options) => { shown.push({ title, ...options }); } },
     clients: { matchAll: async () => [], openWindow: async () => null, ...clients },
@@ -116,6 +127,181 @@ async function until(predicate) {
   for (let turn = 0; turn < 40 && !predicate(); turn++) await new Promise(setImmediate);
   assert.ok(predicate(), '页面事件没有完成消息展示');
 }
+
+/** 用手动放行的网络响应验证首屏，不依赖脆弱的毫秒性能断言。 */
+function deferred() {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+test('启动先保持单一等待界面，慢网全文未返回就显示预览，前后台事件不重复请求或闪回设置', async () => {
+  const html = readFileSync(resolve(assets, 'index.html'), 'utf8');
+  for (const id of ['intro', 'settings']) assert.match(html, new RegExp('<[^>]+id="' + id + '"[^>]*\\bhidden\\b'));
+  const cache = storage(), view = worker(cache), response = deferred();
+  const id = 'c'.repeat(32), preview = { ...message, id, body: '首屏系统预览' };
+  await dispatch(view, 'push', { data: { json: () => preview } });
+  const loaded = await page({ cache, waitForInitial: false, fetcher: () => response.promise });
+  await until(() => loaded.requests.length === 1);
+  assert.equal(loaded.elements['message-body'].textContent, preview.body);
+  assert.equal(loaded.elements['message-image'].src, preview.image);
+  assert.equal(loaded.elements.settings.hidden, true);
+  assert.equal(loaded.elements.intro.hidden, true);
+  loaded.windowEvents.pageshow();
+  loaded.documentEvents.visibilitychange();
+  loaded.workerEvents.message({ data: { type: 'moviepilot-notification', id } });
+  await new Promise(setImmediate);
+  assert.equal(loaded.requests.length, 1);
+  response.resolve(Response.json({ ...preview, body: '完整正文' }));
+  await loaded.ready;
+  await until(() => loaded.elements['message-body'].textContent === '完整正文');
+  assert.equal(loaded.transitions.some(change => ['intro', 'settings'].includes(change.id) && !change.hidden), false);
+  assert.equal(loaded.transitions.filter(change => change.id === 'message' && !change.hidden).length, 1);
+  loaded.windowEvents.pageshow();
+  await new Promise(setImmediate);
+  assert.equal(loaded.elements['message-body'].textContent, '完整正文');
+  assert.equal(loaded.requests.length, 1);
+});
+
+test('绑定恢复尚未返回时不闪现输入绑定码，恢复后直接显示消息', async () => {
+  const response = deferred();
+  const subscription = { endpoint: 'https://web.push.apple.com/test', keys: { p256dh: 'c'.repeat(87), auth: 'd'.repeat(22) } };
+  const loaded = await page({ bound: null, subscription, waitForInitial: false, fetcher: () => response.promise });
+  await until(() => loaded.requests.length === 1);
+  assert.equal(loaded.elements.settings.hidden, true);
+  assert.equal(loaded.elements.intro.hidden, true);
+  loaded.windowEvents.pageshow(); loaded.documentEvents.visibilitychange();
+  response.resolve(Response.json({ ...binding, message: { ...message, id: 'c'.repeat(32) } }));
+  await loaded.ready;
+  assert.equal(loaded.elements['message-body'].textContent, message.body);
+  assert.equal(loaded.transitions.some(change => ['intro', 'settings'].includes(change.id) && !change.hidden), false);
+  assert.equal(loaded.requests.length, 1);
+});
+
+test('新版已有窗口确认接收后直接显示，点击不重复导航，旧页面仍可回退导航升级', async () => {
+  for (const accepts of [true, false]) {
+    const cache = storage(), sent = [], targets = [];
+    let focused = 0;
+    const current = {
+      url: scope,
+      postMessage: (data, ports) => { sent.push(data); if (accepts) ports?.[0].postMessage('moviepilot-notification-ready'); },
+      navigate: async target => { targets.push(target); return current; },
+      focus: async () => { focused++; return current; },
+    };
+    const view = worker(cache, { matchAll: async () => [current] });
+    await dispatch(view, 'push', { data: { json: () => message } });
+    await dispatch(view, 'notificationclick', { notification: { ...view.shown[0], close() {} } });
+    assert.equal(targets.length, accepts ? 0 : 1);
+    assert.equal(focused, 1);
+    assert.equal(sent.length, 1);
+  }
+});
+
+test('已安装网页直接使用离线静态缓存，慢网络不会阻塞通知首页和脚本', async () => {
+  const cache = storage(), view = worker(cache);
+  const files = await cache.open(vm.runInContext('CACHE', view.context));
+  for (const file of ['', 'app.js', 'messages.js', 'style.css']) await files.put(scope + file, new Response('cached ' + file));
+  let fetched = 0;
+  view.context.fetch = () => { fetched++; return new Promise(() => {}); };
+  for (const file of ['?message=' + 'c'.repeat(32), 'app.js', 'messages.js', 'style.css']) {
+    let response;
+    view.handlers.fetch({ request: new Request(scope + file), respondWith: promise => { response = promise; } });
+    const result = await Promise.race([response, new Promise(resolve => setTimeout(() => resolve(null), 100))]);
+    assert.ok(result, '静态资源仍在等待网络');
+    assert.match(await result.text(), /^cached /);
+  }
+  assert.equal(fetched, 0);
+});
+
+test('完整本地消息不等待绑定备份写盘，重复恢复不重置已显示的消息和海报', async () => {
+  const cache = storage();
+  await page({ data: message, cache });
+  const write = deferred();
+  const delayed = { ...cache, open: async name => {
+    const original = await cache.open(name);
+    return { ...original, put: async (key, response) => {
+      if (key.endsWith('/binding')) await write.promise;
+      return original.put(key, response);
+    } };
+  } };
+  const loaded = await page({ cache: delayed });
+  assert.equal(loaded.elements['message-body'].textContent, message.body);
+  assert.equal(loaded.requests.length, 0);
+  loaded.windowEvents.pageshow(); loaded.documentEvents.visibilitychange();
+  await new Promise(setImmediate);
+  assert.equal(loaded.transitions.some(change => change.id === 'message' && change.hidden), false);
+  assert.equal(loaded.elements['message-image'].src, message.image);
+  write.resolve();
+});
+
+test('另一条明确点击优先显示，上一条迟到的全文不会覆盖当前消息', async () => {
+  const cache = storage(), view = worker(cache), response = deferred();
+  const first = { ...message, id: 'c'.repeat(32), body: '第一条预览' };
+  await dispatch(view, 'push', { data: { json: () => first } });
+  const loaded = await page({ cache, waitForInitial: false, fetcher: () => response.promise });
+  await until(() => loaded.requests.length === 1);
+  const latest = { ...message, id: 'e'.repeat(32), body: '第二条完整内容' };
+  const store = vm.runInContext('notificationMessages', view.context);
+  await store.save(latest, 'clicked', true);
+  let acknowledged = false;
+  loaded.workerEvents.message({ data: { type: 'moviepilot-notification', id: latest.id }, ports: [{ postMessage: () => { acknowledged = true; } }] });
+  await until(() => loaded.elements['message-body'].textContent === latest.body);
+  assert.equal(acknowledged, true);
+  response.resolve(Response.json({ ...first, body: '第一条迟到的全文' }));
+  await loaded.ready;
+  assert.equal(loaded.elements['message-body'].textContent, latest.body);
+  assert.equal(loaded.transitions.some(change => change.id === 'settings' && !change.hidden), false);
+});
+
+test('全文请求超时仍保留已显示预览、海报和返回入口，并可手动重试', async () => {
+  const cache = storage(), view = worker(cache);
+  const preview = { ...message, id: 'c'.repeat(32) };
+  await dispatch(view, 'push', { data: { json: () => preview } });
+  let expire;
+  const loaded = await page({ cache, waitForInitial: false,
+    timers: { setTimeout: callback => { expire = callback; return 1; }, clearTimeout() {} },
+    fetcher: (_url, _body, options) => new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new Error('aborted')))),
+  });
+  await until(() => loaded.requests.length === 1);
+  expire(); await loaded.ready;
+  assert.equal(loaded.elements['message-body'].textContent, preview.body);
+  assert.equal(loaded.elements['message-image'].src, preview.image);
+  assert.equal(loaded.elements.back.hidden, false);
+  assert.match(loaded.elements['message-note'].textContent, /网络响应较慢/);
+  assert.equal(loaded.elements.retry.hidden, false);
+  loaded.context.fetch = async () => Response.json({ ...preview, body: '重试后的完整正文' });
+  await loaded.elements.retry.events.click();
+  assert.equal(loaded.elements['message-body'].textContent, '重试后的完整正文');
+  assert.equal(loaded.elements.retry.hidden, true);
+});
+
+test('系统预览省略实例和路由时继续读取鉴权全文，不把不完整预览当作无效消息', async () => {
+  const cache = storage(), view = worker(cache);
+  const id = 'c'.repeat(32);
+  await dispatch(view, 'push', { data: { json: () => ({ id, owner: binding.owner, title: '过大的预览' }) } });
+  const loaded = await page({ cache, fetcher: async () => Response.json({ ...message, id }) });
+  assert.equal(loaded.elements['message-body'].textContent, message.body);
+  assert.equal(loaded.elements['open-app'].hidden, false);
+  assert.equal(loaded.requests.length, 1);
+});
+
+test('私有缓存不可用时已有页面仍直接接收通知预览，不因确认交接而丢失旧格式内容', async () => {
+  const cache = { open: async () => { throw new Error('存储受限'); } };
+  const loaded = await page({ cache, data: message });
+  let navigated = false;
+  const current = {
+    url: scope,
+    postMessage: (data, ports) => loaded.workerEvents.message({ data, ports }),
+    navigate: async () => { navigated = true; }, focus: async () => {},
+  };
+  const view = worker(cache, { matchAll: async () => [current] });
+  const latest = { ...message, body: '存储不可用时的新消息' };
+  await dispatch(view, 'push', { data: { json: () => latest } });
+  await dispatch(view, 'notificationclick', { notification: { ...view.shown[0], close() {} } });
+  await until(() => loaded.elements['message-body'].textContent === latest.body);
+  assert.equal(navigated, false);
+  assert.equal(loaded.elements.settings.hidden, true);
+});
 
 test('旧通知显示纯文本、海报和正确 App 链接，重载仍可恢复', async () => {
   const cache = storage();
@@ -250,6 +436,8 @@ test('网页与系统通知拒绝不安全图片，图片失败和 HTML 正文�
   loaded.elements['message-image'].events.error();
   assert.equal(loaded.elements['message-image'].hidden, true);
   assert.ok(loaded.elements['open-app'].href);
+  await loaded.windowEvents.pageshow();
+  assert.equal(loaded.elements['message-image'].hidden, true);
 });
 
 test('本地暂存限制二十条和二十四小时，解绑清除后不残留内容', async () => {
