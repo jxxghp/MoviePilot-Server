@@ -1,6 +1,7 @@
-/* 系统推送不依赖前台页面运行；只缓存公开静态资源，不缓存账号与绑定响应。 */
-const CACHE = 'moviepilot-notifications-v4';
-const ASSETS = ['./', './style.css', './app.js', './icon.svg', './icon.png', './manifest.webmanifest'];
+/* 静态缓存不含账号与绑定响应；通知交接使用独立、有界的私有暂存。 */
+importScripts('messages.js');
+const CACHE = 'moviepilot-notifications-v5';
+const ASSETS = ['./', './style.css', './app.js', './messages.js', './icon.svg', './icon.png', './manifest.webmanifest'];
 // 新旧消息格式兼容；静态更新接管现有绑定，不要求用户重新订阅。
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())));
 self.addEventListener('activate', event => event.waitUntil((async () => {
@@ -16,6 +17,9 @@ self.addEventListener('fetch', event => {
 self.addEventListener('push', event => event.waitUntil((async () => {
   let data;
   try { data = event.data.json(); } catch { data = { title: 'MoviePilot', body: '你有一条新消息' }; }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) data = { title: 'MoviePilot', body: '你有一条新消息' };
+  // 部分主屏幕启动只恢复 start_url，先保存接收记录，不把详情读取寄托在跳转参数上。
+  try { data.id = await notificationMessages.save(data, 'recent'); } catch { /* 存储不可用时仍展示系统通知。 */ }
   const image = notificationImage(data.image);
   await self.registration.showNotification(String(data.title || 'MoviePilot'), {
     body: String(data.body || ''), icon: image || 'icon.png', ...(image ? { image } : {}), data,
@@ -33,10 +37,22 @@ self.addEventListener('notificationclick', event => {
   event.notification.close();
   event.waitUntil((async () => {
     const target = new URL('./', self.registration.scope);
-    target.hash = 'open=' + encodeURIComponent(JSON.stringify(event.notification.data || {}));
+    const data = { title: event.notification.title, body: event.notification.body, ...event.notification.data };
+    try { target.searchParams.set('message', await notificationMessages.save(data, 'clicked')); }
+    catch { target.hash = 'open=' + encodeURIComponent(JSON.stringify(data)); }
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     const current = windows.find(client => client.url.startsWith(self.registration.scope));
-    if (current) { await current.navigate(target.href); await current.focus(); }
-    else await self.clients.openWindow(target.href);
+    const intent = { type: 'moviepilot-notification', id: target.searchParams.get('message') };
+    if (current) {
+      current.postMessage(intent);
+      // 旧页面需要重新加载脚本；导航或 focus 拒绝不能抹掉已经持久化的点击记录。
+      let opened = current;
+      try { opened = await current.navigate(target.href) || current; } catch { /* 页面恢复时自行读取暂存。 */ }
+      try { await opened.focus(); } catch { /* WebKit 恢复窗口期间可能暂时不可聚焦。 */ }
+      opened.postMessage(intent);
+    } else {
+      const opened = await self.clients.openWindow(target.href);
+      opened?.postMessage(intent);
+    }
   })());
 });

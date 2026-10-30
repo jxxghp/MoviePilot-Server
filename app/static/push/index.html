@@ -9,6 +9,7 @@
   <link rel="apple-touch-icon" href="icon.png">
   <link rel="stylesheet" href="style.css">
   <title>MoviePilot 通知</title>
+  <script src="messages.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body><main>
@@ -19,8 +20,11 @@
     <h2 id="message-title">消息详情</h2>
     <img id="message-image" alt="消息海报" referrerpolicy="no-referrer" decoding="async" hidden>
     <p id="message-body"></p>
+    <p id="message-note" class="note" role="status" hidden></p>
+    <button id="retry" class="secondary" hidden>重新加载消息</button>
     <a id="open-app" class="button">在 MoviePilot App 中打开</a>
     <a id="open-web" class="secondary button">在 MoviePilot 网页中查看</a>
+    <a href="?settings=1" class="secondary button">通知设置</a>
   </section>
   <div id="settings">
   <section id="setup">

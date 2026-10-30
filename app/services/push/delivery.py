@@ -14,10 +14,12 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from pywebpush import WebPushException, webpush
 from requests import RequestException
+from redis.exceptions import RedisError
 
 from app.core.config import Settings, settings
 from app.models.push import PushDevice
 from app.schemas.push import PushMessage
+from app.services.push.messages import save_message
 
 
 class PushDelivery:
@@ -81,7 +83,11 @@ class PushDelivery:
         """
         if device.transport == "webpush":
             async with self.web_semaphore:
-                return await asyncio.to_thread(self._send_web, device, message)
+                try:
+                    identifier = await save_message(device, message)
+                except RedisError:
+                    return False, False, "消息全文暂存失败，请稍后重试"
+                return await asyncio.to_thread(self._send_web, device, message, identifier)
         return await self._send_apns(device, message)
 
     async def _send_apns(self, device: PushDevice, message: PushMessage) -> tuple[bool, bool, str]:
@@ -114,7 +120,7 @@ class PushDelivery:
         except (httpx.HTTPError, OSError, ValueError, jwt.PyJWTError):
             return False, False, "APNs 连接或密钥配置失败"
 
-    def _send_web(self, device: PushDevice, message: PushMessage) -> tuple[bool, bool, str]:
+    def _send_web(self, device: PushDevice, message: PushMessage, identifier: str = "") -> tuple[bool, bool, str]:
         """
         浏览器订阅由 Server 的 VAPID 身份加密，404/410 才清理失效端点。
         """
@@ -125,6 +131,14 @@ class PushDelivery:
                    "route": message.route, "owner": device.owner}
         if message.image:
             payload["image"] = message.image
+        if identifier:
+            payload["id"] = identifier
+            payload["body"] = message.body.encode()[:1024].decode("utf-8", errors="ignore")
+            # 长正文与极长图片/实例地址保留在全文中，系统预览不能突破加密载荷上限。
+            for field in ("url", "body", "image", "route", "origin"):
+                if len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()) <= 3800:
+                    break
+                payload.pop(field, None)
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         if len(encoded.encode()) > 3800:
             return False, False, "通知超过 Web Push 大小上限"
