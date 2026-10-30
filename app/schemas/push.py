@@ -84,7 +84,7 @@ class PushMessage(BaseModel):
     model_config = ConfigDict(extra="forbid")
     owner: str = Field(min_length=16, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$", description="接收用户的不可变通知身份")
     title: str = Field(default="MoviePilot", max_length=256, description="通知标题")
-    body: str = Field(default="", max_length=3000, description="纯文本消息正文")
+    body: str = Field(default="", max_length=65536, description="纯文本消息全文，网页推送仅携带预览，全文由绑定设备读取")
     route: str = Field(default="/?shotcut=message", max_length=2048, description="实例内跳转路由")
     image: str | None = Field(default=None, max_length=2048, description="由接收设备加载的 HTTP(S) 海报地址，旧客户端可不提供")
 
@@ -159,11 +159,28 @@ class WebRegistration(BaseModel):
     subscription: WebSubscription = Field(description="当前浏览器的推送订阅")
 
 
+class WebRestoration(BaseModel):
+    """
+    本地绑定记录缺失时，仅凭浏览器现存订阅的完整密钥恢复同一设备能力。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    subscription: WebSubscription = Field(description="浏览器现有订阅，必须同时匹配端点、p256dh 与私有 auth")
+
+
 class WebManagement(BaseModel):
     """
-    仅持有设备管理令牌的网页可以测试和解除自己的绑定。
+    仅持有设备管理令牌的网页可以测试、解绑和读取本绑定的短期通知全文。
     """
 
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=32, max_length=64, description="服务端分配的设备标识")
     secret: str = Field(min_length=32, max_length=128, description="绑定时一次返回的设备管理令牌")
+
+
+class WebMessage(WebManagement):
+    """
+    消息标识不具有读取能力，仍必须提供本设备的有效管理令牌。
+    """
+
+    message: str = Field(pattern=r"^[a-f0-9]{32}$", description="系统推送携带的随机消息标识")

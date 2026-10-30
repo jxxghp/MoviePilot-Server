@@ -138,6 +138,44 @@ def test_concurrent_installations_share_owner_device_quota(monkeypatch, tmp_path
     run_scenario(monkeypatch, tmp_path, scenario)
 
 
+def test_restored_web_capability_cannot_bypass_disabled_instance(monkeypatch, tmp_path):
+    """
+    通过真实订阅恢复的能力遵守实例停用和解绑，不形成另一条绕过通道。
+    """
+    from app.models.push import PushRelay
+    from app.services.push.registry import create_pairing
+
+    async def scenario(client, factory, _delivery, _redis):
+        """
+        在临时自动接入空间绑定、恢复、停用，校验所有只读端点同时拒绝。
+        """
+        namespace = 'e' * 32
+        async with factory() as db:
+            db.add(PushRelay(id=namespace, user_uid='test-user-identity', enabled=True, created_at=1, updated_at=1))
+            await db.commit()
+        code = await create_pairing(namespace, OWNER_A, 'https://moviepilot.test', 'parent-installation-01')
+        subscription = {'endpoint': 'https://web.push.apple.com/endpoint/restore', 'keys': {'p256dh': 'c' * 87, 'auth': 'd' * 22}}
+        bound = (await client.post('/push/subscriptions', json={
+            'code': code, 'installation': 'web-installation-01', 'subscription': subscription,
+        })).json()
+        response = await client.post('/push/subscriptions/restore', json={'subscription': subscription})
+        assert response.status_code == 200
+        recovered = response.json()
+        async with factory() as db:
+            relay = await db.get(PushRelay, namespace)
+            relay.enabled = False
+            await db.commit()
+        capability = {'id': recovered['id'], 'secret': recovered['secret']}
+        assert (await client.post('/push/subscriptions/restore', json={'subscription': subscription})).status_code == 403
+        assert (await client.post('/push/subscriptions/latest', json=capability)).status_code == 403
+        assert (await client.post('/push/subscriptions/message', json={**capability, 'message': 'f' * 32})).status_code == 403
+        assert (await client.request('DELETE', '/push/subscriptions', json=capability)).status_code == 200
+        assert (await client.post('/push/subscriptions/restore', json={'subscription': subscription})).status_code == 404
+        assert (await client.post('/push/subscriptions/test', json={'id': bound['id'], 'secret': bound['secret']})).status_code == 404
+
+    run_scenario(monkeypatch, tmp_path, scenario)
+
+
 def test_private_relay_auth_user_isolation_rotation_and_logout(monkeypatch, tmp_path):
     """
     无凭据拒绝；发送、令牌轮换、跨用户注销均使用精确命名空间。
@@ -315,7 +353,8 @@ def test_old_delivery_failure_cannot_delete_rotated_token(monkeypatch, tmp_path)
     run_scenario(monkeypatch, tmp_path, scenario)
 
 
-def test_webpush_encrypts_payload_and_signs_vapid_without_real_network(monkeypatch, tmp_path):
+@pytest.mark.parametrize('body', ['中文通知', '通知全文与海报\n' * 3000])
+def test_webpush_encrypts_payload_and_signs_vapid_without_real_network(monkeypatch, tmp_path, body):
     """
     验证实际 pywebpush 加密与 VAPID 签名，网络边界替换后由浏览器私钥解密断言正文。
     """
@@ -363,10 +402,12 @@ def test_webpush_encrypts_payload_and_signs_vapid_without_real_network(monkeypat
     monkeypatch.setattr(requests, 'post', post)
     delivery = PushDelivery(Settings(PUSH_VAPID_KEY_FILE=str(key_path), PUSH_VAPID_SUBJECT='mailto:admin@example.com'))
     image = 'https://images.example.com/poster.jpg'
-    assert delivery._send_web(device, PushMessage(owner=OWNER_A, title='下载完成', body='中文通知', route='/history', image=image))[0]
+    assert delivery._send_web(device, PushMessage(owner=OWNER_A, title='下载完成', body=body, route='/history', image=image), 'c' * 32)[0]
     assert observed[0]['owner'] == OWNER_A
     assert observed[0]['url'] == 'https://moviepilot.test/base/#/history'
-    assert observed[0]['body'] == '中文通知'
+    assert observed[0]['body'] == body.encode()[:1024].decode('utf-8', errors='ignore')
+    assert observed[0]['id'] == 'c' * 32
+    assert len(json.dumps(observed[0], ensure_ascii=False, separators=(',', ':')).encode()) <= 3800
     assert observed[0]['image'] == image
 
 
@@ -390,7 +431,7 @@ def test_notification_page_allows_posters_without_allowing_remote_scripts(monkey
         """
         校验公开详情页和 worker 的响应头，不连接真实图片服务器。
         """
-        for asset in ('', 'app.js', 'worker.js'):
+        for asset in ('', 'app.js', 'worker.js', 'messages.js'):
             response = await client.get('/push/app/' + asset)
             assert response.status_code == 200
             policy = response.headers['content-security-policy']
@@ -399,4 +440,92 @@ def test_notification_page_allows_posters_without_allowing_remote_scripts(monkey
             assert "object-src 'none'" in policy
             assert response.headers['referrer-policy'] == 'no-referrer'
             assert response.headers['cache-control'] == 'no-cache'
+    run_scenario(monkeypatch, tmp_path, scenario)
+
+
+def test_full_web_message_is_device_scoped_bounded_and_revoked(monkeypatch, tmp_path):
+    """
+    实际投递暂存全文，路由验证设备隔离、配额淘汰、过期与换绑失效。
+    """
+    from app.services.push.messages import message_key
+
+    wire = []
+    monkeypatch.setattr('app.services.push.delivery.webpush', lambda **kwargs: wire.append(json.loads(kwargs['data'])))
+
+    async def scenario(client, factory, _double, redis):
+        """
+        只替换系统推送网络边界，使用实际绑定、投递、Redis 脚本及全文读取端点。
+        """
+        async def bind(installation, owner=OWNER_A):
+            """
+            不同网页以各自一次性码建立独立能力，避免测试共享管理令牌。
+            """
+            pair = (await client.post('/push/pairings', headers=auth(), json={
+                'owner': owner, 'origin': 'https://moviepilot.test/base', 'installation': 'parent-' + installation,
+            })).json()
+            result = await client.post('/push/subscriptions', json={
+                'code': pair['code'], 'installation': installation, 'subscription': {
+                    'endpoint': 'https://web.push.apple.com/endpoint/' + installation,
+                    'keys': {'p256dh': installation[-1] * 87, 'auth': installation[-1] * 22},
+                },
+            })
+            assert result.status_code == 200
+            return result.json()
+
+        first = await bind('web-installation-01')
+        other = await bind('web-installation-02')
+        outsider = await bind('web-installation-03', OWNER_B)
+        async with factory() as db:
+            device = await db.get(PushDevice, first['id'])
+        delivery = PushDelivery(Settings(PUSH_VAPID_KEY_FILE='not-opened.pem', PUSH_VAPID_SUBJECT='mailto:test@example.com'))
+        full = PushMessage(owner=OWNER_A, title='下载完成', body='全文保留，不截断。\n' * 6000,
+                           image='https://images.test/poster.jpg', route='/history')
+        assert (await delivery.send(device, full))[0]
+        identifier = wire[-1]['id']
+        capability = {'id': first['id'], 'secret': first['secret'], 'message': identifier}
+        response = await client.post('/push/subscriptions/message', json=capability)
+        assert response.status_code == 200
+        assert response.json()['body'] == full.body
+        assert response.json()['image'] == full.image
+        assert response.json()['origin'] == device.origin
+        assert response.headers['cache-control'] == 'no-store'
+        assert 0 < await redis.ttl(message_key(device) + ':' + identifier) <= 86400
+        subscription = {'endpoint': 'https://web.push.apple.com/endpoint/web-installation-01',
+                        'keys': {'p256dh': '1' * 87, 'auth': '1' * 22}}
+        recovered = await client.post('/push/subscriptions/restore', json={'subscription': subscription})
+        assert recovered.status_code == 200
+        restored = recovered.json()
+        assert restored['id'] == first['id'] and restored['message']['body'] == full.body
+        assert recovered.headers['cache-control'] == 'no-store'
+        restored_capability = {'id': restored['id'], 'secret': restored['secret'], 'message': identifier}
+        assert (await client.post('/push/subscriptions/message', json=restored_capability)).status_code == 200
+        assert (await client.post('/push/subscriptions/message', json=capability)).status_code == 200
+        assert (await client.post('/push/subscriptions/latest', json={'id': restored['id'], 'secret': restored['secret']})).json()['id'] == identifier
+        for keys in ({'p256dh': '2' * 87, 'auth': '1' * 22}, {'p256dh': '1' * 87, 'auth': '2' * 22}):
+            denied = await client.post('/push/subscriptions/restore', json={'subscription': {**subscription, 'keys': keys}})
+            assert denied.status_code == 404
+        for binding in (other, outsider, {**first, 'secret': 'wrong-secret-' * 4}):
+            result = await client.post('/push/subscriptions/message', json={
+                'id': binding['id'], 'secret': binding['secret'], 'message': identifier,
+            })
+            assert result.status_code == 404
+        # 第二十一次投递原子淘汰第一条，既限制条数，也移除对应全文键。
+        for _ in range(20):
+            assert (await delivery.send(device, full))[0]
+        assert await redis.llen(message_key(device)) == 20
+        assert not await redis.exists(message_key(device) + ':' + identifier)
+        assert (await client.post('/push/subscriptions/message', json=capability)).status_code == 404
+        latest = wire[-1]['id']
+        await redis.expire(message_key(device) + ':' + latest, 0)
+        assert (await client.post('/push/subscriptions/message', json={**capability, 'message': latest})).status_code == 404
+        assert (await delivery.send(device, full))[0]
+        retained = wire[-1]['id']
+        rebound = await bind('web-installation-01')
+        assert (await client.post('/push/subscriptions/message', json={**capability, 'message': retained})).status_code == 404
+        assert (await client.post('/push/subscriptions/message', json=restored_capability)).status_code == 404
+        replacement = {'id': rebound['id'], 'secret': rebound['secret'], 'message': retained}
+        assert (await client.post('/push/subscriptions/message', json=replacement)).status_code == 404
+        await client.request('DELETE', '/push/subscriptions', json={'id': rebound['id'], 'secret': rebound['secret']})
+        assert (await client.post('/push/subscriptions/message', json=replacement)).status_code == 404
+
     run_scenario(monkeypatch, tmp_path, scenario)

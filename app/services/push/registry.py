@@ -3,6 +3,7 @@
 """
 
 import hashlib
+import hmac
 import json
 import secrets
 import time
@@ -25,6 +26,16 @@ def digest(value: str) -> str:
     使用不可逆摘要标识能力令牌，数据库与 Redis 键均不记录原始值。
     """
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+def restoration_secret(device: PushDevice) -> str:
+    """
+    使用订阅私有 auth 派生本绑定版本的恢复能力，原管理令牌仍保持有效。
+
+    完整订阅匹配后才下发；换绑产生新 revision，旧恢复能力随之失效。
+    """
+    auth = json.loads(device.destination)["keys"]["auth"]
+    return hmac.new(auth.encode(), f"MoviePilot notification:{device.id}:{device.revision}".encode(), hashlib.sha256).hexdigest()
 
 
 async def rate_limit(key: str, maximum: int = 60, window: int = 60) -> None:

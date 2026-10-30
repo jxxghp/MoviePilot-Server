@@ -11,16 +11,18 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.deps import get_db
 from app.models.push import PushDevice, PushRelay
-from app.schemas.push import PushEnrollment, PushMessage, PushPairing, PushRegistration, PushRemoval, PushRotation, WebManagement, WebRegistration
+from app.schemas.push import PushEnrollment, PushMessage, PushPairing, PushRegistration, PushRemoval, PushRotation, WebManagement, WebMessage, WebRegistration, WebRestoration
 from app.services.push.delivery import PushDelivery, push_delivery
 from app.services.push.enrollment import authenticated_relay, enroll, rotate
+from app.services.push.messages import latest_message, read_message
 from app.services.push.registry import (
-    binding_lock, claim_pairing, create_pairing, devices_for_owner, digest, prune_revision, rate_limit, remove_device, save_device,
+    binding_lock, claim_pairing, create_pairing, devices_for_owner, digest, prune_revision, rate_limit, remove_device, restoration_secret, save_device,
 )
 
 async def no_store(response: Response) -> None:
@@ -188,9 +190,30 @@ async def managed_device(body: WebManagement, db: AsyncSession) -> PushDevice:
     设备管理密钥只核对摘要，错误标识与错误密钥统一返回不存在。
     """
     device = await db.get(PushDevice, body.id)
-    if not device or device.transport != "webpush" or not hmac.compare_digest(device.secret_hash, digest(body.secret)):
+    if not device or device.transport != "webpush":
+        raise HTTPException(404, "通知绑定不存在")
+    if not (hmac.compare_digest(device.secret_hash, digest(body.secret))
+            or hmac.compare_digest(digest(restoration_secret(device)), digest(body.secret))):
         raise HTTPException(404, "通知绑定不存在")
     return device
+
+
+@router.post("/subscriptions/restore", dependencies=[Depends(anonymous_limit)])
+async def restore_subscription(body: WebRestoration, db: AsyncSession = Depends(get_db)):
+    """
+    丢失 localStorage 时校验仍存在的推送订阅，不凭公开设备标识或端点恢复他人能力。
+    """
+    subscription = body.subscription
+    device = (await db.execute(select(PushDevice).where(
+        PushDevice.transport == "webpush", PushDevice.fingerprint == digest(subscription.endpoint),
+    ))).scalar_one_or_none()
+    supplied = json.dumps(subscription.keys, sort_keys=True)
+    stored = json.dumps(json.loads(device.destination)["keys"], sort_keys=True) if device else ""
+    if not device or not hmac.compare_digest(stored.encode(), supplied.encode()):
+        raise HTTPException(404, "未找到匹配的通知订阅，请从原主屏幕通知应用打开")
+    await require_enabled_namespace(db, device.namespace)
+    return {"id": device.id, "secret": restoration_secret(device), "origin": device.origin, "owner": device.owner,
+            "message": await latest_message(device)}
 
 
 async def require_enabled_namespace(db: AsyncSession, namespace: str) -> None:
@@ -244,6 +267,29 @@ async def send_message(body: PushMessage, namespace: str = Depends(relay_namespa
     return {"total": len(devices), "accepted": accepted, "failed": failed}
 
 
+@router.post("/subscriptions/message", dependencies=[Depends(anonymous_limit)])
+async def notification_message(body: WebMessage, db: AsyncSession = Depends(get_db)):
+    """
+    绑定网页按随机标识读取本设备全文，解绑、换绑或停用后立即失去读取能力。
+    """
+    device = await managed_device(body, db)
+    await require_enabled_namespace(db, device.namespace)
+    message = await read_message(device, body.message)
+    if not message:
+        raise HTTPException(404, "消息全文已过期或不属于当前绑定，请在 MoviePilot App 中查看")
+    return message
+
+
+@router.post("/subscriptions/latest", dependencies=[Depends(anonymous_limit)])
+async def latest_notification(body: WebManagement, db: AsyncSession = Depends(get_db)):
+    """
+    起始页恢复未交付点击参数的通知，仅返回当前设备最近一条仍有效的全文。
+    """
+    device = await managed_device(body, db)
+    await require_enabled_namespace(db, device.namespace)
+    return await latest_message(device)
+
+
 @router.get("/app/{asset:path}", include_in_schema=False)
 async def notification_page(asset: str = ""):
     """
@@ -251,7 +297,7 @@ async def notification_page(asset: str = ""):
     """
     allowed = {"": "index.html", "index.html": "index.html", "app.js": "app.js", "style.css": "style.css",
                "worker.js": "worker.js", "manifest.webmanifest": "manifest.webmanifest", "icon.svg": "icon.svg",
-               "icon.png": "icon.png"}
+               "icon.png": "icon.png", "messages.js": "messages.js"}
     if asset not in allowed:
         raise HTTPException(404)
     media = {"worker.js": "text/javascript", "manifest.webmanifest": "application/manifest+json"}
