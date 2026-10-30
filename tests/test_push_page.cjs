@@ -34,7 +34,7 @@ function page(data, bound = binding) {
   const elements = Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(match => [match[1], new Element()]));
   const windowEvents = {};
   const location = new URL('https://relay.test/push/app/');
-  location.hash = 'open=' + encodeURIComponent(JSON.stringify(data));
+  if (data !== undefined) location.hash = 'open=' + encodeURIComponent(JSON.stringify(data));
   const updates = [];
   const context = vm.createContext({
     URL, URLSearchParams, location,
@@ -53,6 +53,7 @@ test('点击通知显示本条标题、换行正文、海报及相同实例和�
   assert.match(html, />在 MoviePilot App 中打开<\/a>/);
   const { elements, location, updates } = page(message);
   assert.equal(elements.message.hidden, false);
+  assert.equal(elements.settings.hidden, true);
   assert.equal(elements['message-title'].textContent, message.title);
   assert.equal(elements['message-body'].textContent, message.body);
   assert.equal(elements['message-image'].src, message.image);
@@ -64,6 +65,18 @@ test('点击通知显示本条标题、换行正文、海报及相同实例和�
   assert.equal(elements['open-web'].href, binding.origin + '/#' + message.route);
   assert.equal(location.hash, '');
   assert.deepEqual(updates, ['worker.js']);
+});
+
+test('直接打开网页保留测试和绑定设置，通知详情中隐藏整组管理操作', () => {
+  const connected = page(undefined).elements;
+  assert.equal(connected.settings.hidden, false);
+  assert.equal(connected.connected.hidden, false);
+  assert.equal(connected.setup.hidden, true);
+  assert.equal(connected.message.hidden, true);
+  const setup = page(undefined, null).elements;
+  assert.equal(setup.settings.hidden, false);
+  assert.equal(setup.setup.hidden, false);
+  assert.equal(setup.connected.hidden, true);
 });
 
 test('系统通知点击将本条内容交给详情页，兼容已有窗口和首次打开', async () => {
@@ -112,6 +125,7 @@ test('其他账号、实例、外站路由及反斜线不能显示内容或保�
     view.location.hash = 'open=' + encodeURIComponent(JSON.stringify({ ...message, ...invalid }));
     view.windowEvents.hashchange();
     assert.equal(view.elements.message.hidden, true);
+    assert.equal(view.elements.settings.hidden, false);
     assert.equal(view.elements['message-title'].textContent, '');
     assert.equal(view.elements['message-body'].textContent, '');
     assert.equal(view.elements['message-image'].src, undefined);
