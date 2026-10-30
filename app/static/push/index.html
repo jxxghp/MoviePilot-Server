@@ -13,7 +13,8 @@
   <script src="app.js" defer></script>
 </head>
 <body><main>
-  <header id="intro">
+  <div id="opening" role="status" aria-live="polite"><p>正在打开通知…</p></div>
+  <header id="intro" hidden>
   <img src="icon.svg" alt="" width="64" height="64">
   <h1>MoviePilot 通知</h1>
   <p>接收下载、入库和订阅提醒。</p>
@@ -28,7 +29,7 @@
     <a id="open-app" class="button">在 MoviePilot App 中打开</a>
     <a id="open-web" class="secondary button">在 MoviePilot 网页中查看</a>
   </section>
-  <div id="settings">
+  <div id="settings" hidden>
   <section id="setup">
     <p id="install">iPhone：先在 Safari 分享菜单选择“添加到主屏幕”，再从主屏幕打开并绑定。</p>
     <label for="code">App 中生成的绑定码</label>
