@@ -13,9 +13,12 @@
   <script src="app.js" defer></script>
 </head>
 <body><main>
+  <header id="intro">
   <img src="icon.svg" alt="" width="64" height="64">
   <h1>MoviePilot 通知</h1>
   <p>接收下载、入库和订阅提醒。</p>
+  </header>
+  <a id="back" class="back" href="?settings=1" aria-label="返回通知主页面" hidden>‹ 返回</a>
   <section id="message" hidden>
     <h2 id="message-title">消息详情</h2>
     <img id="message-image" alt="消息海报" referrerpolicy="no-referrer" decoding="async" hidden>
@@ -24,7 +27,6 @@
     <button id="retry" class="secondary" hidden>重新加载消息</button>
     <a id="open-app" class="button">在 MoviePilot App 中打开</a>
     <a id="open-web" class="secondary button">在 MoviePilot 网页中查看</a>
-    <a href="?settings=1" class="secondary button">通知设置</a>
   </section>
   <div id="settings">
   <section id="setup">
