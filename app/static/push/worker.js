@@ -1,7 +1,8 @@
 /* 系统推送不依赖前台页面运行；只缓存公开静态资源，不缓存账号与绑定响应。 */
-const CACHE = 'moviepilot-notifications-v2';
+const CACHE = 'moviepilot-notifications-v3';
 const ASSETS = ['./', './style.css', './app.js', './icon.svg', './icon.png', './manifest.webmanifest'];
-self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS))));
+// 新旧消息格式兼容；静态更新接管现有绑定，不要求用户重新订阅。
+self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())));
 self.addEventListener('activate', event => event.waitUntil((async () => {
   for (const key of await caches.keys()) if (key.startsWith('moviepilot-notifications-') && key !== CACHE) await caches.delete(key);
   await self.clients.claim();
@@ -15,10 +16,19 @@ self.addEventListener('fetch', event => {
 self.addEventListener('push', event => event.waitUntil((async () => {
   let data;
   try { data = event.data.json(); } catch { data = { title: 'MoviePilot', body: '你有一条新消息' }; }
+  const image = notificationImage(data.image);
   await self.registration.showNotification(String(data.title || 'MoviePilot'), {
-    body: String(data.body || ''), icon: 'icon.png', data,
+    body: String(data.body || ''), icon: image || 'icon.png', ...(image ? { image } : {}), data,
   });
 })()));
+/** 浏览器按自身能力展示海报；不将脚本、凭据地址或本地文件交给系统通知。 */
+function notificationImage(value) {
+  if (typeof value !== 'string' || value.length > 2048 || /[\\\s\p{Cc}\p{Cf}]/u.test(value)) return '';
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : '';
+  } catch { return ''; }
+}
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   event.waitUntil((async () => {

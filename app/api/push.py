@@ -257,5 +257,5 @@ async def notification_page(asset: str = ""):
     media = {"worker.js": "text/javascript", "manifest.webmanifest": "application/manifest+json"}
     return FileResponse(STATIC / allowed[asset], media_type=media.get(asset), headers={
         "Cache-Control": "no-cache", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+        "Content-Security-Policy": "default-src 'self'; img-src 'self' data: https: http:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
     })

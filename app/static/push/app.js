@@ -61,9 +61,21 @@ element('remove').addEventListener('click', () => perform(async () => {
   if (subscription) await subscription.unsubscribe();
   binding = null; localStorage.removeItem('moviepilot.push.binding'); status('已解除绑定');
 }));
+/** 仅加载网页图片；旧消息缺少图片或含不安全引用时继续显示正文和跳转入口。 */
+function messageImage(value) {
+  if (typeof value !== 'string' || value.length > 2048 || /[\\\s\p{Cc}\p{Cf}]/u.test(value)) return '';
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : '';
+  } catch { return ''; }
+}
+/** 图片失败不阻断消息阅读，也不影响用户返回 App。 */
+element('message-image').addEventListener('error', () => { element('message-image').hidden = true; });
 /** 通知点击只交接已绑定实例的相对路由，其他来源或其他账号的旧消息不能打开。 */
 function openMessage() {
   element('message').hidden = true;
+  element('message-title').textContent = ''; element('message-body').textContent = '';
+  element('message-image').hidden = true; element('message-image').removeAttribute('src');
   element('open-app').removeAttribute('href'); element('open-web').removeAttribute('href');
   if (!location.hash.startsWith('#open=') || !binding) return;
   try {
@@ -73,8 +85,14 @@ function openMessage() {
     element('open-web').href = binding.origin + '/#' + data.route;
     const params = new URLSearchParams({ origin: binding.origin, route: data.route, owner: binding.owner });
     element('open-app').href = 'moviepilot-app://notification?' + params.toString();
+    element('message-title').textContent = typeof data.title === 'string' && data.title ? data.title : 'MoviePilot 通知';
+    element('message-body').textContent = typeof data.body === 'string' ? data.body : '';
+    const image = messageImage(data.image);
+    if (image) { element('message-image').src = image; element('message-image').hidden = false; }
     element('message').hidden = false;
   } catch { status('这条通知无法打开，请进入 App 查看消息', true); }
 }
 render(); openMessage();
 window.addEventListener('hashchange', openMessage);
+// 已绑定网页也检查 worker 更新，补齐海报展示时无需解除绑定或生成新绑定码。
+if (binding && 'serviceWorker' in navigator) navigator.serviceWorker.register('worker.js').catch(() => {});
