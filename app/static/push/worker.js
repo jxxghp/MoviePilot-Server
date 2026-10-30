@@ -1,5 +1,5 @@
 /* 系统推送不依赖前台页面运行；只缓存公开静态资源，不缓存账号与绑定响应。 */
-const CACHE = 'moviepilot-notifications-v3';
+const CACHE = 'moviepilot-notifications-v4';
 const ASSETS = ['./', './style.css', './app.js', './icon.svg', './icon.png', './manifest.webmanifest'];
 // 新旧消息格式兼容；静态更新接管现有绑定，不要求用户重新订阅。
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())));

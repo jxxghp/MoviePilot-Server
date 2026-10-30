@@ -18,7 +18,7 @@ async function api(path, body, method = 'POST') {
 /** 刷新本机绑定状态，地址采用文本渲染。 */
 function render() {
   element('connected').hidden = !binding; element('setup').hidden = !!binding;
-  if (!binding) element('message').hidden = true;
+  if (!binding) { element('message').hidden = true; element('settings').hidden = false; }
   element('instance').textContent = binding ? '已连接 ' + binding.origin : '';
 }
 /** 将 VAPID 公钥转换为浏览器订阅需要的字节序列。 */
@@ -74,6 +74,7 @@ element('message-image').addEventListener('error', () => { element('message-imag
 /** 通知点击只交接已绑定实例的相对路由，其他来源或其他账号的旧消息不能打开。 */
 function openMessage() {
   element('message').hidden = true;
+  element('settings').hidden = false;
   element('message-title').textContent = ''; element('message-body').textContent = '';
   element('message-image').hidden = true; element('message-image').removeAttribute('src');
   element('open-app').removeAttribute('href'); element('open-web').removeAttribute('href');
@@ -90,6 +91,7 @@ function openMessage() {
     const image = messageImage(data.image);
     if (image) { element('message-image').src = image; element('message-image').hidden = false; }
     element('message').hidden = false;
+    element('settings').hidden = true;
   } catch { status('这条通知无法打开，请进入 App 查看消息', true); }
 }
 render(); openMessage();
