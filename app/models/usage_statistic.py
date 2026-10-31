@@ -3,6 +3,7 @@
 """
 from sqlalchemy import Column, Integer, String, and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from app.models.base import Base, get_id_column
 
@@ -117,5 +118,46 @@ class UsageStatistics(Base):
             )
             .group_by(cls.frontend_version)
             .order_by(count_expr.desc())
+        )
+        return result.all()
+
+
+class IOSUsageStatistics(Base):
+    """按匿名 App 安装标识保存最新 iOS 版本，与后端实例数独立。"""
+
+    __tablename__ = "IOS_USAGE_STATISTICS"
+
+    id = get_id_column()
+    installation_id = Column(String(36), unique=True, index=True, nullable=False)
+    version = Column(String(64), nullable=False, index=True)
+    first_seen_at = Column(String, nullable=False)
+    last_seen_at = Column(String, nullable=False, index=True)
+
+    @classmethod
+    async def record(cls, db: AsyncSession, installation_id: str, version: str, now: str) -> None:
+        """覆盖同一安装的最新版本；嵌套事务处理首次并发上报。"""
+        result = await db.execute(
+            update(cls).where(cls.installation_id == installation_id)
+            .values(version=version, last_seen_at=now)
+        )
+        if result.rowcount:
+            return
+        try:
+            async with db.begin_nested():
+                db.add(cls(installation_id=installation_id, version=version,
+                           first_seen_at=now, last_seen_at=now))
+                await db.flush()
+        except IntegrityError:
+            await db.execute(
+                update(cls).where(cls.installation_id == installation_id)
+                .values(version=version, last_seen_at=now)
+            )
+
+    @classmethod
+    async def list_version_counts(cls, db: AsyncSession):
+        """返回各 iOS 版本的去重安装数量。"""
+        count = func.count(cls.id)
+        result = await db.execute(
+            select(cls.version, count).group_by(cls.version).order_by(count.desc())
         )
         return result.all()

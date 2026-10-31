@@ -9,8 +9,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache_manager
-from app.models import UsageStatistics
-from app.schemas.models import UsageStatisticItem
+from app.models import IOSUsageStatistics, UsageStatistics
+from app.schemas.models import IOSUsageStatisticItem, UsageStatisticItem
 
 
 class UsageService:
@@ -108,6 +108,14 @@ class UsageService:
         return {"code": 0, "message": "success"}
 
     @staticmethod
+    async def report_ios_usage(db: AsyncSession, usage: IOSUsageStatisticItem) -> Dict[str, Any]:
+        """保存匿名 iOS 安装版本，不改变后端实例和活跃用户计数。"""
+        await IOSUsageStatistics.record(db, str(usage.installation_id), usage.version, UsageService._now())
+        await db.commit()
+        UsageService._invalidate_statistics_cache()
+        return {"code": 0, "message": "success"}
+
+    @staticmethod
     async def get_statistics(db: AsyncSession) -> Dict[str, Any]:
         """查询安装版本统计报表"""
         cache_key = "usage_versions"
@@ -140,6 +148,10 @@ class UsageService:
             ],
             "frontend_versions": [
                 UsageService._normalize_version_count(row) for row in frontend_versions
+            ],
+            "ios_app_versions": [
+                UsageService._normalize_version_count(row)
+                for row in await IOSUsageStatistics.list_version_counts(db)
             ],
             "updated_at": UsageService._now(),
             "cache_ttl": 1800,

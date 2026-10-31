@@ -19,7 +19,7 @@ if (kind === 'usage') void api('/overview').then(result => { usage.value = resul
 </script>
 <template>
   <section><div class="mb-8"><h1 class="text-3xl font-semibold tracking-tight">{{ route.meta.title }}</h1><p class="mt-3 text-sm text-muted-foreground">{{ subtitles[kind] }}</p></div>
-    <div v-if="kind === 'usage' && usage" class="mb-8 border-b pb-8"><Versions :backend="usage.backend_versions" :frontend="usage.frontend_versions" /></div>
+    <div v-if="kind === 'usage' && usage" class="mb-8 border-b pb-8"><Versions :backend="usage.backend_versions" :frontend="usage.frontend_versions" :ios="usage.ios_app_versions ?? []" /></div>
     <Tabs v-if="kind === 'shares' || kind === 'plugins'" v-model="tab" class="mb-6"><TabsList><template v-if="kind === 'shares'"><TabsTrigger value="subscribe-shares">订阅分享</TabsTrigger><TabsTrigger value="workflow-shares">工作流分享</TabsTrigger></template><template v-else><TabsTrigger value="plugins">安装与评分汇总</TabsTrigger><TabsTrigger value="ratings">评分明细</TabsTrigger></template></TabsList></Tabs>
     <Records :key="resource" :resource="resource" />
   </section>

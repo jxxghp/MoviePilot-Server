@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.deps import get_db
-from app.schemas.models import UsageStatisticItem
+from app.schemas.models import IOSUsageStatisticItem, UsageStatisticItem
 from app.services.usage_statistic import UsageService
 
 router = APIRouter()
@@ -28,3 +28,9 @@ async def usage_statistic(db: AsyncSession = Depends(get_db)):
     查询安装版本统计报表
     """
     return await UsageService.get_statistics(db)
+
+
+@router.post("/ios/report")
+async def ios_usage_report(usage: IOSUsageStatisticItem, db: AsyncSession = Depends(get_db)):
+    """上报 iOS App 匿名安装与当前版本。"""
+    return await UsageService.report_ios_usage(db, usage)

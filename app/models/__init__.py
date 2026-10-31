@@ -8,7 +8,7 @@ from app.models.plugin_statistic import PluginStatistics
 from app.models.push import PushDevice, PushRelay, PushRelayKey
 from app.models.subscribe_share import SubscribeShare
 from app.models.subscribe_statistics import SubscribeStatistics
-from app.models.usage_statistic import UsageStatistics
+from app.models.usage_statistic import IOSUsageStatistics, UsageStatistics
 from app.models.workflow_share import WorkflowShare
 
 __all__ = [
@@ -26,5 +26,6 @@ __all__ = [
     "SubscribeStatistics",
     "SubscribeShare",
     "UsageStatistics",
+    "IOSUsageStatistics",
     "WorkflowShare"
 ]

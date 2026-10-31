@@ -3,6 +3,7 @@ Pydantic模型定义
 """
 from typing import Any, ClassVar, List, Optional
 from enum import Enum
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -42,6 +43,13 @@ class PluginRatingResult(BaseModel):
     average_rating: float = 0.0
     rating_count: int = 0
     user_rating: Optional[float] = None
+
+
+class IOSUsageStatisticItem(BaseModel):
+    """iOS 匿名安装上报，仅接收安装 UUID 与发布版本。"""
+
+    installation_id: UUID
+    version: str = Field(min_length=1, max_length=64, pattern=r"^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$")
 
 
 class UsageStatisticItem(BaseModel):
