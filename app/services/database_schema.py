@@ -64,6 +64,8 @@ MEDIA_IDENTITY_CONSTRAINTS = {
     "SUBSCRIBE_SHARE": "ck_subscribe_share_media_identity",
 }
 
+SHARE_OWNER_TOKEN_TABLES = ("SUBSCRIBE_SHARE", "WORKFLOW_SHARE")
+
 
 def _sqlite_rebuild_identity_table(
         connection: Connection,
@@ -192,6 +194,18 @@ def _ensure_subscribe_identity_schema(connection: Connection) -> None:
     """迁移订阅表身份字段：补列、回填、规范来源并删除旧专用 ID 列。"""
     inspector = inspect(connection)
     table_names = set(inspector.get_table_names())
+    for table_name in SHARE_OWNER_TOKEN_TABLES:
+        if table_name not in table_names:
+            continue
+        existing_columns = {
+            column["name"] for column in inspector.get_columns(table_name)
+        }
+        if "owner_token_hash" not in existing_columns:
+            connection.execute(text(
+                f'ALTER TABLE "{table_name}" '
+                'ADD COLUMN "owner_token_hash" VARCHAR(64)'
+            ))
+
     for table_name, columns in SUBSCRIBE_UNIFIED_COLUMNS.items():
         if table_name not in table_names:
             continue

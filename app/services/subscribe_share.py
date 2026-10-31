@@ -9,6 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache_manager
 from app.core.media import build_legacy_media_identity, resolve_media_identity
+from app.core.share_token import (
+    create_share_owner_token,
+    hash_share_owner_token,
+    verify_share_owner_token,
+)
 from app.schemas.models import SubscribeShareItem, SortType
 
 
@@ -27,8 +32,9 @@ class SubscribeShareService:
                 or not media_id
         ):
             return {
-                "code": 1,
-                "message": "分享信息或媒体身份不完整"
+                "success": False,
+                "message": "分享信息或媒体身份不完整",
+                "data": None,
             }
         subscribe.media_source = media_source
         subscribe.media_id = media_id
@@ -39,34 +45,44 @@ class SubscribeShareService:
         # 如果不存在则创建
         if not sub:
             subscribe.date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            sub = SubscribeShare(**subscribe.storage_payload(), count=1)
+            owner_token = create_share_owner_token()
+            sub = SubscribeShare(
+                **subscribe.storage_payload(),
+                count=1,
+                owner_token_hash=hash_share_owner_token(owner_token),
+            )
             await sub.create(db)
         # 如果存在则报错
         else:
             return {
-                "code": 2,
-                "message": "您使用的昵称已经分享过这个订阅了"
+                "success": False,
+                "message": "您使用的昵称已经分享过这个订阅了",
+                "data": None,
             }
 
         # 清除缓存
         cache_manager.share_cache.clear()
 
-        return {"code": 0, "message": "success"}
+        return {
+            "success": True,
+            "message": "success",
+            "data": {"id": sub.id, "owner_token": owner_token},
+        }
 
     @staticmethod
-    async def delete_share(db: AsyncSession, share_id: int, share_uid: str) -> Dict[str, Any]:
+    async def delete_share(db: AsyncSession, share_id: int, owner_token: str | None) -> Dict[str, Any]:
         """删除订阅分享"""
         # 查询数据库中是否存在
         sub = await SubscribeShare.read_by_id(db, share_id)
 
-        # 只有分享者本人（实例唯一ID一致）可以删除
-        if sub and share_uid and sub.share_uid == share_uid:
+        # 公开列表中的 share_uid 不是授权凭据，只接受创建时返回的私有令牌。
+        if sub and verify_share_owner_token(owner_token, sub.owner_token_hash):
             await sub.delete(db, share_id)
             # 清除缓存
             cache_manager.share_cache.clear()
-            return {"code": 0, "message": "success"}
+            return {"success": True, "message": "success", "data": None}
 
-        return {"code": 1, "message": "分享不存在或无权限"}
+        return {"success": False, "message": "分享不存在或无权限", "data": None}
 
     @staticmethod
     async def get_shares(db: AsyncSession, name: str = None, page: int = 1, count: int = 30, genre_id: int = None,

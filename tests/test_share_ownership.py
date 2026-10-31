@@ -1,6 +1,7 @@
-"""工作流与订阅分享的上下文过滤和删除归属测试。"""
+"""工作流与订阅分享的上下文过滤和私有删除令牌测试。"""
 
 import asyncio
+import hashlib
 
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -56,91 +57,179 @@ def _workflow_payload(**overrides) -> dict:
     return payload
 
 
-def test_workflow_share_drops_submitted_context() -> None:
-    """发布工作流分享时不得保存请求中的执行上下文。"""
+def _assert_envelope(payload: dict, success: bool) -> None:
+    """分享写接口必须始终返回固定的三字段信封。"""
+    assert set(payload) == {"success", "message", "data"}
+    assert payload["success"] is success
+
+
+def test_workflow_share_creation_returns_private_owner_token() -> None:
+    """创建分享只返回一次私有令牌，存储和公开列表都不能泄露它。"""
 
     async def scenario(client, session_factory) -> None:
         response = await client.post(
             "/workflow/share",
             json=_workflow_payload(context='{"content": "bGVnYWN5"}'),
         )
-        assert response.json()["code"] == 0
+        payload = response.json()
+        _assert_envelope(payload, True)
+        assert set(payload["data"]) == {"id", "owner_token"}
+        owner_token = payload["data"]["owner_token"]
+        share_id = payload["data"]["id"]
+        assert isinstance(owner_token, str) and len(owner_token) >= 40
 
         async with session_factory() as session:
-            stored = (await session.execute(select(WorkflowShare))).scalar_one()
+            stored = await session.get(WorkflowShare, share_id)
+        assert stored is not None
         assert stored.context is None
+        expected_hash = hashlib.sha256(owner_token.encode()).hexdigest()
+        assert stored.owner_token_hash == expected_hash
+        assert len(stored.owner_token_hash) == 64
+        assert int(stored.owner_token_hash, 16) >= 0
+        assert "owner_token_hash" not in stored.dict()
+        assert "owner_token" not in stored.dict()
+
+        listed = (await client.get("/workflow/shares")).json()
+        assert len(listed) == 1
+        assert listed[0]["share_uid"] == "uid-alice"
+        assert listed[0]["context"] is None
+        assert "owner_token_hash" not in listed[0]
+        assert "owner_token" not in listed[0]
+
+        duplicate = await client.post("/workflow/share", json=_workflow_payload())
+        _assert_envelope(duplicate.json(), False)
+        assert duplicate.json()["data"] is None
 
     _run_with_client(scenario)
 
 
-def test_workflow_shares_never_return_stored_context() -> None:
-    """历史数据中残留的执行上下文不得下发给复用方。"""
+def test_subscribe_share_creation_returns_private_owner_token() -> None:
+    """订阅分享采用同样的令牌存储与公开字段过滤规则。"""
+
+    async def scenario(client, session_factory) -> None:
+        body = {
+            "share_title": "测试订阅",
+            "share_user": "alice",
+            "share_uid": "uid-alice",
+            "name": "测试剧集",
+            "type": "电视剧",
+            "tmdbid": 550,
+        }
+        response = await client.post("/subscribe/share", json=body)
+        payload = response.json()
+        _assert_envelope(payload, True)
+        assert set(payload["data"]) == {"id", "owner_token"}
+        owner_token = payload["data"]["owner_token"]
+        share_id = payload["data"]["id"]
+
+        async with session_factory() as session:
+            stored = await session.get(SubscribeShare, share_id)
+        assert stored is not None
+        assert stored.owner_token_hash == hashlib.sha256(owner_token.encode()).hexdigest()
+        assert len(stored.owner_token_hash) == 64
+
+        listed = (await client.get("/subscribe/shares")).json()
+        assert len(listed) == 1
+        assert listed[0]["share_uid"] == "uid-alice"
+        assert "owner_token_hash" not in listed[0]
+        assert "owner_token" not in listed[0]
+
+        duplicate = await client.post("/subscribe/share", json=body)
+        _assert_envelope(duplicate.json(), False)
+        assert duplicate.json()["data"] is None
+
+    _run_with_client(scenario)
+
+
+def test_share_deletion_requires_private_owner_token() -> None:
+    """公开 share_uid 不能删除分享，Header 中的正确令牌才能删除。"""
+
+    async def scenario(client, session_factory) -> None:
+        workflow = (
+            await client.post("/workflow/share", json=_workflow_payload())
+        ).json()["data"]
+        subscribe = (
+            await client.post("/subscribe/share", json={
+                "share_title": "删除测试",
+                "share_user": "bob",
+                "share_uid": "uid-bob",
+                "name": "删除测试剧集",
+                "type": "电视剧",
+                "tmdbid": 551,
+            })
+        ).json()["data"]
+
+        cases = (
+            (WorkflowShare, "/workflow", workflow),
+            (SubscribeShare, "/subscribe", subscribe),
+        )
+        for model, prefix, created in cases:
+            share_id = created["id"]
+            owner_token = created["owner_token"]
+
+            missing = await client.delete(
+                f"{prefix}/share/{share_id}",
+                params={"share_uid": "uid-alice"},
+            )
+            _assert_envelope(missing.json(), False)
+            assert missing.json()["data"] is None
+            async with session_factory() as session:
+                assert await session.get(model, share_id) is not None
+
+            wrong = await client.delete(
+                f"{prefix}/share/{share_id}",
+                headers={"X-Share-Owner-Token": "wrong-token"},
+            )
+            _assert_envelope(wrong.json(), False)
+            async with session_factory() as session:
+                assert await session.get(model, share_id) is not None
+
+            accepted = await client.delete(
+                f"{prefix}/share/{share_id}",
+                headers={"X-Share-Owner-Token": owner_token},
+            )
+            _assert_envelope(accepted.json(), True)
+            assert accepted.json()["data"] is None
+            async with session_factory() as session:
+                assert await session.get(model, share_id) is None
+
+    _run_with_client(scenario)
+
+
+def test_legacy_share_without_token_hash_cannot_be_deleted_by_users() -> None:
+    """迁移前的历史分享缺少摘要时，普通用户不能凭公开字段删除。"""
 
     async def scenario(client, session_factory) -> None:
         async with session_factory() as session:
-            session.add(WorkflowShare(
+            workflow = WorkflowShare(
                 **_workflow_payload(),
-                context='{"content": "bGVnYWN5"}',
                 date="2026-10-01 00:00:00",
                 count=0,
-            ))
-            await session.commit()
-
-        response = await client.get("/workflow/shares")
-
-        shares = response.json()
-        assert len(shares) == 1
-        assert shares[0]["context"] is None
-        assert shares[0]["actions"] == "[]"
-
-    _run_with_client(scenario)
-
-
-def test_workflow_share_delete_requires_owner_uid() -> None:
-    """只有分享者本人的实例 ID 可以删除工作流分享。"""
-
-    async def scenario(client, session_factory) -> None:
-        await client.post("/workflow/share", json=_workflow_payload())
-        async with session_factory() as session:
-            share_id = (await session.execute(select(WorkflowShare.id))).scalar_one()
-
-        rejected = await client.delete(f"/workflow/share/{share_id}", params={"share_uid": "uid-mallory"})
-        assert rejected.json()["code"] == 1
-        async with session_factory() as session:
-            assert (await session.execute(select(WorkflowShare.id))).scalar_one_or_none() == share_id
-
-        accepted = await client.delete(f"/workflow/share/{share_id}", params={"share_uid": "uid-alice"})
-        assert accepted.json()["code"] == 0
-        async with session_factory() as session:
-            assert (await session.execute(select(WorkflowShare.id))).scalar_one_or_none() is None
-
-    _run_with_client(scenario)
-
-
-def test_subscribe_share_delete_requires_owner_uid() -> None:
-    """只有分享者本人的实例 ID 可以删除订阅分享。"""
-
-    async def scenario(client, session_factory) -> None:
-        async with session_factory() as session:
-            share = SubscribeShare(
-                share_title="测试订阅",
+            )
+            subscribe = SubscribeShare(
+                share_title="历史订阅",
                 share_user="alice",
                 share_uid="uid-alice",
-                name="测试剧集",
+                name="历史剧集",
                 type="电视剧",
             )
-            session.add(share)
+            session.add_all([workflow, subscribe])
             await session.commit()
-            share_id = share.id
+            workflow_id = workflow.id
+            subscribe_id = subscribe.id
 
-        rejected = await client.delete(f"/subscribe/share/{share_id}", params={"share_uid": "uid-mallory"})
-        assert rejected.json()["code"] == 1
-        async with session_factory() as session:
-            assert (await session.execute(select(SubscribeShare.id))).scalar_one_or_none() == share_id
-
-        accepted = await client.delete(f"/subscribe/share/{share_id}", params={"share_uid": "uid-alice"})
-        assert accepted.json()["code"] == 0
-        async with session_factory() as session:
-            assert (await session.execute(select(SubscribeShare.id))).scalar_one_or_none() is None
+        for model, prefix, share_id in (
+            (WorkflowShare, "/workflow", workflow_id),
+            (SubscribeShare, "/subscribe", subscribe_id),
+        ):
+            rejected = await client.delete(
+                f"{prefix}/share/{share_id}",
+                params={"share_uid": "uid-alice"},
+                headers={"X-Share-Owner-Token": "guessed-token"},
+            )
+            _assert_envelope(rejected.json(), False)
+            assert rejected.json()["data"] is None
+            async with session_factory() as session:
+                assert await session.get(model, share_id) is not None
 
     _run_with_client(scenario)

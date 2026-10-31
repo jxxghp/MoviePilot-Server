@@ -22,6 +22,8 @@ class WorkflowShare(Base):
     share_user = Column(String)
     # 分享人唯一ID
     share_uid = Column(String)
+    # 分享删除令牌摘要，不对外返回
+    owner_token_hash = Column(String(64))
     # 工作流名称
     name = Column(String, index=True, nullable=False)
     # 工作流描述
@@ -116,4 +118,8 @@ class WorkflowShare(Base):
         return result.scalars().all()
 
     def dict(self):
-        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}
+        return {
+            c.name: getattr(self, c.name, None)
+            for c in self.__table__.columns
+            if c.name != "owner_token_hash"
+        }

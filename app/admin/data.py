@@ -41,7 +41,7 @@ def serialize(item) -> dict:
     data = {}
     for column in item.__table__.columns:
         value = getattr(item, column.name)
-        if column.name == "context":
+        if column.name in {"context", "owner_token_hash"}:
             continue
         if column.name in {"user_uid", "share_uid"} and value:
             value = f"{str(value)[:4]}…{str(value)[-4:]}" if len(str(value)) > 8 else "***"
@@ -70,7 +70,9 @@ async def list_data(db: AsyncSession, resource: str, q: str, page: int, size: in
             raise HTTPException(422, "媒体来源无效")
         query = query.where(model.media_source == str(normalized))
     total = await db.scalar(select(func.count()).select_from(query.subquery()))
-    allowed_sort = {column.name for column in model.__table__.columns} - {"context", "actions", "flows", "detail"}
+    allowed_sort = {
+        column.name for column in model.__table__.columns
+    } - {"context", "owner_token_hash", "actions", "flows", "detail"}
     if sort and sort not in allowed_sort:
         raise HTTPException(422, "排序字段无效")
     order = getattr(model, sort or "id")

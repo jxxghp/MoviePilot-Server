@@ -284,7 +284,7 @@ def test_share_keeps_original_enumerated_source_without_tmdb() -> None:
                     media_id="movie-7",
                 ),
             )
-            assert result["code"] == 0
+            assert result["success"] is True
             shares = await SubscribeShareService.get_shares(session)
             assert shares[0]["media_source"] == "anilist"
             assert shares[0]["media_id"] == "movie-7"
@@ -380,7 +380,7 @@ def test_subscribe_apis_keep_legacy_io_while_storing_only_unified_identity() -> 
                 share_read = await client.get("/subscribe/shares")
 
             assert statistic_write.json()["code"] == 0
-            assert share_write.json()["code"] == 0
+            assert share_write.json()["success"] is True
             statistic_item = statistic_read.json()[0]
             assert statistic_item["media_source"] == MediaSource.TMDB.value
             assert statistic_item["media_id"] == "701"
@@ -549,7 +549,7 @@ def test_share_keeps_album_entity_and_track_count() -> None:
                     total_tracks=11,
                 ),
             )
-            assert result["code"] == 0
+            assert result["success"] is True
             shares = await SubscribeShareService.get_shares(session)
             assert shares[0]["music_type"] == "album"
             assert shares[0]["total_tracks"] == 11

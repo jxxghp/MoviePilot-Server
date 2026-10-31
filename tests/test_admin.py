@@ -166,14 +166,39 @@ def test_business_details_delete_and_rating_summary(monkeypatch):
     async def scenario(client, factory, redis):
         """使用实际 SQL 数据验证删除事务及隐私字段过滤。"""
         async with factory() as db:
-            share = WorkflowShare(name="流程", share_title="流程分享", share_user="Alice", share_uid="uid-private", context="secret", count=4)
+            share = WorkflowShare(
+                name="流程",
+                share_title="流程分享",
+                share_user="Alice",
+                share_uid="uid-private",
+                owner_token_hash="a" * 64,
+                context="secret",
+                count=4,
+            )
+            subscribe_share = SubscribeShare(
+                name="订阅流程",
+                share_title="订阅分享",
+                share_user="Alice",
+                share_uid="uid-private",
+                owner_token_hash="b" * 64,
+                type="电视剧",
+            )
             rating = PluginRating(plugin_id="plugin", user_uid="private-installation", rating=Decimal("5.0"), created_at="2026-10-19", updated_at="2026-10-19")
-            db.add_all([share, rating, PluginRating(plugin_id="plugin", user_uid="other-installation", rating=Decimal("3.0"), created_at="2026-10-19", updated_at="2026-10-19"), PluginRatingSummary(plugin_id="plugin", average_rating=4, rating_count=2, updated_at="2026-10-19")])
+            db.add_all([share, subscribe_share, rating, PluginRating(plugin_id="plugin", user_uid="other-installation", rating=Decimal("3.0"), created_at="2026-10-19", updated_at="2026-10-19"), PluginRatingSummary(plugin_id="plugin", average_rating=4, rating_count=2, updated_at="2026-10-19")])
             await db.commit()
-            sid, rid = share.id, rating.id
+            sid, subscribe_sid, rid = share.id, subscribe_share.id, rating.id
         csrf = await login(client)
         detail = (await client.get(f"/admin/api/data/workflow-shares/{sid}")).json()
         assert detail["count"] == 4 and "context" not in detail and detail["share_uid"] != "uid-private"
+        subscribe_detail = (await client.get(f"/admin/api/data/subscribe-shares/{subscribe_sid}")).json()
+        overview = (await client.get("/admin/api/overview")).json()
+        workflow_list = (await client.get("/admin/api/data/workflow-shares")).json()
+        subscribe_list = (await client.get("/admin/api/data/subscribe-shares")).json()
+        serialized_responses = [detail, subscribe_detail, overview, workflow_list, subscribe_list]
+        assert all("owner_token_hash" not in json.dumps(response) for response in serialized_responses)
+        assert all("owner_token" not in json.dumps(response) for response in serialized_responses)
+        assert (await client.get("/admin/api/data/workflow-shares", params={"sort": "owner_token_hash"})).status_code == 422
+        assert (await client.get("/admin/api/data/subscribe-shares", params={"sort": "owner_token_hash"})).status_code == 422
         assert (await client.get("/admin/api/data/ratings", params={"sort": "password_hash"})).status_code == 422
         assert (await client.request("DELETE", f"/admin/api/data/ratings/{rid}", headers=csrf, json={"confirm": ""})).status_code == 422
         response = await client.request("DELETE", f"/admin/api/data/ratings/{rid}", headers=csrf, json={"confirm": "删除"})

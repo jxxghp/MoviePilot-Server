@@ -1,7 +1,9 @@
 """
 订阅分享相关API路由
 """
-from fastapi import APIRouter, Depends
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.deps import get_db
@@ -29,11 +31,15 @@ async def subscribe_share_statistics(db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/share/{sid}")
-async def subscribe_share_delete(sid: int, share_uid: str, db: AsyncSession = Depends(get_db)):
+async def subscribe_share_delete(
+        sid: int,
+        owner_token: Optional[str] = Header(default=None, alias="X-Share-Owner-Token"),
+        db: AsyncSession = Depends(get_db),
+):
     """
     删除订阅分享
     """
-    return await SubscribeShareService.delete_share(db, sid, share_uid)
+    return await SubscribeShareService.delete_share(db, sid, owner_token)
 
 
 @router.get("/shares")

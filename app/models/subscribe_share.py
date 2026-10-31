@@ -38,6 +38,8 @@ class SubscribeShare(Base):
     share_user = Column(String)
     # 分享人唯一ID
     share_uid = Column(String)
+    # 分享删除令牌摘要，不对外返回
+    owner_token_hash = Column(String(64))
     # 媒体名称
     name = Column(String, index=True, nullable=False)
     # 搜索关键词
@@ -219,4 +221,8 @@ class SubscribeShare(Base):
         return result.all()
 
     def dict(self):
-        return {c.name: getattr(self, c.name, None) for c in self.__table__.columns}
+        return {
+            c.name: getattr(self, c.name, None)
+            for c in self.__table__.columns
+            if c.name != "owner_token_hash"
+        }
