@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.user import router as user_router
+from app.core.cache import cache_manager
 from app.core.config import settings
 from app.db.deps import get_db
 from app.models import Base
@@ -16,6 +17,8 @@ def _get(path: str, params: dict | None = None) -> dict:
     """挂载用户路由并请求指定接口。"""
 
     async def run() -> dict:
+        """隔离数据库和公共配置缓存，避免不同请求场景共享在线配置。"""
+        cache_manager.features_cache.clear()
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)

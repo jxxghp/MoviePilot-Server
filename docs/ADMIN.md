@@ -59,6 +59,7 @@
 “权限与功能”中保存的配置存入 `ADMIN_SETTING` 表，所有 worker 读取相同配置。
 未在线保存时沿用 `COMMUNITY_MEDALS_ENABLED`、`COMMUNITY_MEDALS_PREVIEW_USERS`、`MP_ADMIN_USERS` 环境变量。
 在线保存后以数据库为准，后续单改环境变量不会覆盖已经保存的设置。
+公共功能与权限接口合并同一 worker 的并发配置读取，本地缓存最多保留 3 秒；保存后立即清除当前 worker 缓存，并通过 Redis 修订号通知其他 worker。Redis 临时不可用时仍由短 TTL 限制旧配置的保留时间。后台配置页面和保存审计始终直接读取数据库。
 勋章全局开关经 `/user/features` 下发，Nginx 的公开缓存通常在 60 秒内刷新。
 预览名单为空时无人预览，包括管理员；全局开放则对所有实例生效。
 

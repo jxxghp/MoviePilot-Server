@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.admin.api import router
 from app.admin.auth import COOKIE_NAME, session_key
+from app.admin.invalidation import admin_cache_invalidation
 from app.admin.schemas import CreateUserPayload
 from app.admin.static import install_admin_pages
 from app.admin.users import create_user
@@ -151,8 +152,11 @@ def test_online_features_reach_public_contract(monkeypatch):
     async def scenario(client, factory, redis):
         """通过后台保存，再从公开接口回读实际生效值。"""
         csrf = await login(client)
+        await client.get("/user/features")
+        await client.get("/user/permissions", params={"github_user": "Bob"})
         payload = {"community_medals_enabled": True, "community_medals_preview_users": [" Alice "], "github_admin_users": ["Bob"]}
         assert (await client.put("/admin/api/features", headers=csrf, json=payload)).status_code == 200
+        assert await redis.get(admin_cache_invalidation.key()) == "1"
         assert (await client.get("/user/features")).json() == {"community_medals": True}
         alice = (await client.get("/user/permissions", params={"github_user": "ALICE"})).json()
         bob = (await client.get("/user/permissions", params={"github_user": "Bob"})).json()
