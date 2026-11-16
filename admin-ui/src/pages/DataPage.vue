@@ -11,6 +11,7 @@ const tab = ref(kind === 'shares' && route.query.tab === 'workflow-shares' ? 'wo
 const usage = ref<any>(null)
 const resource = computed(() => tab.value)
 const subtitles: Record<string, string> = {
+  'media-mappings': '管理各影视来源到 TheMovieDb 的共享关系；可纠正目标或撤销错误关系',
   usage: '查看版本分布与安装实例的最近上报情况', subscriptions: '按媒体、来源和类型查看订阅热度',
   shares: '查看订阅与工作流分享，处理不合适的共享内容', plugins: '查看插件安装统计、评分汇总与评分明细',
   audit: '追溯登录、账号变更、配置修改与数据管理操作',

@@ -1,5 +1,16 @@
 # MoviePilot-Server
 
+非 TMDB 影视来源到 TMDB 的对应关系通过 `GET/POST /recognize/mapping` 共享，
+长期保存到独立的 `MEDIA_MAPPING` SQL 表，启动时自动创建，不参与定期统计或识别缓存清理。
+请求使用 `media_source`、`media_id`、`type`、可选原来源 `season`；共享时增加
+`tmdb_id`、`tmdb_type`、可选 `tmdb_season`。仅支持电影与电视剧，不生成反向关系。
+未提供季号且存在不同目标时返回空关系；公共共享只插入缺失记录，不覆盖既有目标。
+
+后台“媒体对应关系”支持按来源、ID、类型查询，并修正 TMDB 目标、季号或撤销错误关系。
+撤销会保留原记录，阻止旧实例重新共享；修改写入审计日志。实例正缓存最多一小时后刷新。
+部署时请同步 `docker/nginx.conf` 中 `/recognize/mapping` 的独立代理配置：禁止代理缓存，
+连接超时一秒、读写超时两秒。MoviePilot 客户端另有 800 毫秒查询总预算和 500 毫秒上报总预算。
+
 MoviePilot 的中心化服务端，承载统计、共享、公共服务及可选的私有消息中转。项目基于 FastAPI、SQLAlchemy 和 Redis，支持 SQLite 与 PostgreSQL，并提供 `linux/amd64`、`linux/arm64` 多架构容器镜像。
 
 ## 功能

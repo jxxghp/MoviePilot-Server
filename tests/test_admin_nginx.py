@@ -37,7 +37,7 @@ class EchoBackend(BaseHTTPRequestHandler):
         """测试中不输出每个代理请求的访问日志。"""
 
 
-@pytest.mark.parametrize("prefix", ["admin", "push"])
+@pytest.mark.parametrize("prefix", ["admin", "push", "recognize/mapping"])
 def test_real_nginx_preserves_private_routes(tmp_path, prefix):
     """使用仓库原样 location，实测私有路径、静态资源、认证头和错误防缓存。"""
     nginx = shutil.which("nginx")
@@ -45,7 +45,10 @@ def test_real_nginx_preserves_private_routes(tmp_path, prefix):
         pytest.skip("本机未安装 Nginx")
     source = (Path(__file__).parents[1] / "docker/nginx.conf").read_text()
     blocks = re.findall(rf"\t\tlocation (?:= /{prefix}|\^~ /{prefix}/) \{{.*?\n\t\t\}}", source, re.S)
-    assert len(blocks) == 2
+    assert len(blocks) == (1 if prefix == "recognize/mapping" else 2)
+    if prefix == "recognize/mapping":
+        assert "proxy_connect_timeout 1s;" in blocks[0]
+        assert "proxy_read_timeout 2s;" in blocks[0]
     backend = ThreadingHTTPServer(("127.0.0.1", 0), EchoBackend)
     thread = threading.Thread(target=backend.serve_forever, daemon=True)
     thread.start()
@@ -86,20 +89,25 @@ def test_real_nginx_preserves_private_routes(tmp_path, prefix):
                 time.sleep(0.05)
         else:
             pytest.fail("隔离 Nginx 未启动")
-        for suffix in ("/", "/users", "/api/auth/me?check=1", "/assets/main.js", "/logo.png", "/app/worker.js", "/unauthorized"):
+        suffixes = ("?check=1", "?case=/unauthorized") if prefix == "recognize/mapping" else (
+            "/", "/users", "/api/auth/me?check=1", "/assets/main.js", "/logo.png", "/app/worker.js", "/unauthorized",
+        )
+        for suffix in suffixes:
             path = f"/{prefix}{suffix}"
             connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
             connection.request("GET", path, headers={
                 "Authorization": "Bearer test-private-credential", "X-Forwarded-For": "198.51.100.23",
             })
             response = connection.getresponse()
-            assert response.status == (401 if suffix == "/unauthorized" else 200)
+            assert response.status == (401 if suffix.endswith("/unauthorized") else 200)
             assert response.read().decode() == path
             assert response.getheader("Cache-Control") == "no-store"
             assert response.getheader("X-Echo-Authorization") == "Bearer test-private-credential"
             if prefix == "push":
                 assert response.getheader("X-Echo-Forwarded-For") == "127.0.0.1"
             connection.close()
+        if prefix == "recognize/mapping":
+            return
         connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
         connection.request("GET", f"/{prefix}")
         response = connection.getresponse()

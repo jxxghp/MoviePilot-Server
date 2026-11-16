@@ -15,6 +15,7 @@ const allNav = [
   { path: '/overview', label: '总览', icon: LayoutDashboard }, { path: '/usage', label: '使用统计', icon: ChartColumnIncreasing },
   { path: '/subscriptions', label: '订阅数据', icon: ListVideo }, { path: '/shares', label: '共享内容', icon: Share2 },
   { path: '/plugins', label: '插件数据', icon: Puzzle }, { path: '/recognition', label: '识别缓存', icon: Database },
+  { path: '/media-mappings', label: '媒体对应关系', icon: ListVideo },
   { path: '/features', label: '权限与功能', icon: ShieldCheck }, { path: '/system', label: '服务与维护', icon: Settings2 },
   { path: '/users', label: '用户管理', icon: Users, super: true }, { path: '/audit', label: '操作记录', icon: History },
   { path: '/push', label: '推送实例', icon: ShieldCheck, super: true },

@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class AdminPayload(BaseModel):
@@ -76,6 +76,26 @@ class CacheDeletePayload(ConfirmPayload):
     """仅允许删除共享识别命名空间内的精确缓存键。"""
 
     key: str = Field(min_length=1, max_length=4096)
+
+
+class MappingUpdatePayload(ConfirmPayload):
+    """
+    管理员只修改 TMDB 目标或撤销状态，原来源身份保持稳定。
+    """
+
+    tmdb_id: int = Field(gt=0, le=2147483647, description="修正后的 TMDB ID")
+    tmdb_type: Literal["movie", "tv"] = Field(description="TMDB 影视类型")
+    tmdb_season: int | None = Field(default=None, ge=0, le=10000, description="TMDB 剧集季号")
+    blocked: bool = Field(description="是否撤销公共查询，保留记录以阻止重新共享")
+
+    @model_validator(mode="after")
+    def validate_movie(self):
+        """
+        防止管理操作为电影保存剧集季号。
+        """
+        if self.tmdb_type == "movie" and self.tmdb_season is not None:
+            raise ValueError("电影不能指定季号")
+        return self
 
 
 class PushStatePayload(ConfirmPayload):

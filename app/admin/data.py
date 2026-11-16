@@ -18,6 +18,8 @@ from app.models import (
     SubscribeStatistics, UsageStatistics, WorkflowShare,
 )
 from app.models.admin import AdminAudit, AdminUser
+from app.models.mapping import MediaMapping
+from app.admin.schemas import MappingUpdatePayload
 from app.services.plugin_rating import PluginRatingService
 from app.services.usage_statistic import UsageService
 
@@ -26,6 +28,7 @@ RESOURCES = {
     "subscriptions": SubscribeStatistics, "subscribe-shares": SubscribeShare,
     "workflow-shares": WorkflowShare, "plugins": PluginStatistics,
     "ratings": PluginRating, "installations": UsageStatistics, "audit": AdminAudit,
+    "media-mappings": MediaMapping,
 }
 
 
@@ -59,6 +62,7 @@ async def list_data(db: AsyncSession, resource: str, q: str, page: int, size: in
     if q:
         fields = [getattr(model, name) for name in (
             "name", "share_title", "share_user", "plugin_id", "user_uid", "actor", "action", "target", "backend_version",
+            "media_id", "tmdb_id",
         ) if hasattr(model, name)]
         # contains(autoescape) 使百分号和下划线按字面搜索。
         query = query.where(or_(*(cast(field, String).icontains(q, autoescape=True) for field in fields)))
@@ -101,6 +105,8 @@ async def detail(db: AsyncSession, resource: str, item_id: int) -> dict:
 
 async def delete_data(db: AsyncSession, resource: str, item_id: int, actor: AdminUser) -> None:
     """删除指定业务记录；评分删除与汇总重算在同一事务中完成。"""
+    if resource == "media-mappings":
+        raise HTTPException(403, "对应关系请使用撤销操作，以阻止错误关系重新上报")
     if resource == "audit":
         raise HTTPException(403, "操作记录不允许删除")
     item = await db.get(model_for(resource), item_id)
@@ -124,6 +130,22 @@ async def delete_data(db: AsyncSession, resource: str, item_id: int, actor: Admi
     record(db, actor, "data.delete", f"{resource}/{item_id}")
     await db.commit()
     await admin_cache_invalidation.invalidate()
+
+
+async def update_mapping(db: AsyncSession, item_id: int, payload: MappingUpdatePayload, actor: AdminUser) -> dict:
+    """
+    后台纠正或撤销关系，保留原身份和撤销记录，阻止公共上报恢复错误关系。
+    """
+    item = await db.get(MediaMapping, item_id, with_for_update=True)
+    if item is None:
+        raise HTTPException(404, "对应关系不存在")
+    for name in ("tmdb_id", "tmdb_type", "tmdb_season", "blocked"):
+        setattr(item, name, getattr(payload, name))
+    item.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    record(db, actor, "mapping.update", f"media-mappings/{item_id}")
+    await db.commit()
+    await db.refresh(item)
+    return serialize(item)
 
 
 async def overview(db: AsyncSession) -> dict:
