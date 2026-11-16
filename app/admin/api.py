@@ -10,7 +10,7 @@ from app.admin.audit import record, user_dict
 from app.admin.auth import AdminIdentity, administrator, current_identity, super_administrator
 from app.admin.schemas import (
     CacheDeletePayload, ChangePasswordPayload, ConfirmPayload, CreateUserPayload, FeaturesPayload,
-    LoginPayload, PushStatePayload, ResetPasswordPayload, UpdateUserPayload,
+    LoginPayload, PushStatePayload, ResetPasswordPayload, UpdateUserPayload, MappingUpdatePayload,
 )
 from app.db.deps import get_db
 from app.db.redis import get_redis
@@ -18,6 +18,16 @@ from app.models.admin import AdminUser
 from app.services.data_cleanup import data_cleanup_service
 
 router = APIRouter(prefix="/admin/api", tags=["admin"])
+
+
+@router.patch("/mappings/{item_id}")
+async def update_mapping(item_id: int, payload: MappingUpdatePayload,
+                         identity: AdminIdentity = Depends(administrator), db: AsyncSession = Depends(get_db)):
+    """
+    认证管理员确认后纠正或撤销共享关系，写入现有审计日志。
+    """
+    require_confirmation(payload, "保存")
+    return await data.update_mapping(db, item_id, payload, identity.user)
 
 
 @router.get("/push/instances")

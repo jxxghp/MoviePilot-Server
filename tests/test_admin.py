@@ -75,6 +75,37 @@ async def login(client, username="root", password=PASSWORD):
     return {"X-CSRF-Token": response.json()["csrf_token"]}
 
 
+def test_mapping_management_requires_session_csrf_and_confirmation(monkeypatch):
+    """
+    共享关系管理沿用后台真实认证、CSRF 和确认文字，不提供物理删除入口。
+    """
+    async def scenario(client, factory, redis):
+        """
+        经真实路由修改目标及撤销状态，未授权请求不得影响公开关系。
+        """
+        from app.models.mapping import MediaMapping
+
+        async with factory() as db:
+            item = MediaMapping(media_source="douban", media_id="123", type="tv", season=-1,
+                                tmdb_id=456, tmdb_type="tv", tmdb_season=1, created_at="now", updated_at="now")
+            db.add(item)
+            await db.commit()
+            item_id = item.id
+        path = f"/admin/api/mappings/{item_id}"
+        payload = {"tmdb_id": 789, "tmdb_type": "tv", "tmdb_season": 0, "blocked": True, "confirm": "保存"}
+        assert (await client.get("/admin/api/data/media-mappings")).status_code == 401
+        assert (await client.patch(path, json=payload)).status_code == 401
+        csrf = await login(client)
+        assert (await client.patch(path, json=payload)).status_code == 403
+        assert (await client.patch(path, json={**payload, "confirm": ""}, headers=csrf)).status_code == 422
+        response = await client.patch(path, json=payload, headers=csrf)
+        assert response.status_code == 200
+        assert response.json()["tmdb_id"] == 789 and response.json()["blocked"] is True
+        assert (await client.request("DELETE", f"/admin/api/data/media-mappings/{item_id}",
+                                     json={"confirm": "删除"}, headers=csrf)).status_code == 403
+    run_scenario(monkeypatch, scenario)
+
+
 def test_protected_routes_and_csrf(monkeypatch):
     """全部数据入口需要认证，已登录的写请求仍必须携带 CSRF 标识。"""
     async def scenario(client, factory, redis):

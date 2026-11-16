@@ -2,6 +2,7 @@ export interface Column { key: string; label: string; numeric?: boolean; time?: 
 /** 声明业务列表列，集中维护中文名称和展示方式。 */
 const c = (key: string, label: string, numeric = false, time = false): Column => ({ key, label, numeric, time })
 export const columns: Record<string, Column[]> = {
+  'media-mappings': [c('media_source', '来源'), c('media_id', '来源 ID'), c('type', '类型'), c('season', '来源季号', true), c('tmdb_id', 'TMDB ID', true), c('tmdb_type', 'TMDB 类型'), c('tmdb_season', 'TMDB 季号', true), c('blocked', '已撤销'), c('updated_at', '更新时间', false, true)],
   subscriptions: [c('name', '媒体名称'), c('type', '类型'), c('year', '年份'), c('media_source', '媒体来源'), c('count', '订阅次数', true)],
   'subscribe-shares': [c('share_title', '分享标题'), c('name', '媒体名称'), c('type', '类型'), c('share_user', '分享者'), c('count', '复用次数', true), c('date', '创建时间', false, true)],
   'workflow-shares': [c('share_title', '分享标题'), c('name', '工作流名称'), c('share_user', '分享者'), c('count', '复用次数', true), c('date', '创建时间', false, true)],
@@ -11,6 +12,7 @@ export const columns: Record<string, Column[]> = {
   audit: [c('actor', '操作者'), c('action', '操作'), c('target', '对象'), c('created_at', '时间', false, true)],
 }
 export const labels: Record<string, string> = {
+  tmdb_id: 'TMDB ID', tmdb_type: 'TMDB 类型', tmdb_season: 'TMDB 季号', blocked: '已撤销',
   id: '记录 ID', name: '名称', share_title: '分享标题', share_comment: '分享介绍', share_user: '分享者', share_uid: '分享实例',
   type: '媒体类型', media_source: '媒体来源', media_id: '媒体 ID', year: '年份', season: '季号', music_type: '音乐类型',
   total_tracks: '总曲目数', total_episode: '总集数', keyword: '搜索关键词', genre_ids: '类别 ID', vote: '媒体评分', description: '介绍',

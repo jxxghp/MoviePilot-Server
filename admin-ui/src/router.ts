@@ -23,6 +23,7 @@ export const router = createRouter({
       { path: 'shares', component: DataPage, meta: { title: '共享内容', kind: 'shares' } },
       { path: 'plugins', component: DataPage, meta: { title: '插件数据', kind: 'plugins' } },
       { path: 'recognition', component: Recognition, meta: { title: '识别缓存' } },
+      { path: 'media-mappings', component: DataPage, meta: { title: '媒体对应关系', kind: 'media-mappings' } },
       { path: 'features', component: Features, meta: { title: '权限与功能' } },
       { path: 'system', component: System, meta: { title: '服务与维护' } },
       { path: 'users', component: Users, meta: { title: '用户管理', super: true } },

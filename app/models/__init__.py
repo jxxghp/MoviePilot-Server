@@ -2,6 +2,7 @@
 数据库模型导入
 """
 from app.models.base import Base, get_id_column
+from app.models.mapping import MediaMapping
 from app.models.admin import AdminAudit, AdminSetting, AdminUser
 from app.models.plugin_rating import PluginRating, PluginRatingSummary
 from app.models.plugin_statistic import PluginStatistics
@@ -13,6 +14,7 @@ from app.models.workflow_share import WorkflowShare
 
 __all__ = [
     "Base",
+    "MediaMapping",
     "PushDevice",
     "PushRelay",
     "PushRelayKey",
