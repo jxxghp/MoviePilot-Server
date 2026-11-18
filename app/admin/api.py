@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.admin import auth, config, data, push, system, users
+from app.admin import auth, config, data, knowledge, push, system, users
 from app.admin.audit import record, user_dict
 from app.admin.auth import AdminIdentity, administrator, current_identity, super_administrator
 from app.admin.schemas import (
@@ -18,6 +18,7 @@ from app.models.admin import AdminUser
 from app.services.data_cleanup import data_cleanup_service
 
 router = APIRouter(prefix="/admin/api", tags=["admin"])
+router.include_router(knowledge.router)
 
 
 @router.patch("/mappings/{item_id}")

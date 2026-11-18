@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # 社区勋章预览名单，逗号分隔的 GitHub 用户名（不区分大小写）；为空表示无人预览，不是所有人
     COMMUNITY_MEDALS_PREVIEW_USERS: str = ""
 
+    # 中心知识在线查询与采集默认关闭；后台仍可预先维护来源和草稿。
+    KNOWLEDGE_ENABLED: bool = False
+
     # 兼容手工接入：每个 MoviePilot 实例使用独立随机密钥，逗号分隔；为空不影响自动接入。
     PUSH_RELAY_KEYS: str = ""
     # 自动接入显式开启；关闭后不撤销已登记实例，便于运维止住新注册。

@@ -1,0 +1,162 @@
+"""
+中心知识的集合、站点、来源和不可变文档修订。
+
+本阶段只保存受控管理数据，不向公共接口发布正文或启动采集。
+"""
+
+from datetime import datetime, timezone
+from uuid import uuid4
+
+from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+
+from app.models.base import Base
+
+
+def new_identity() -> str:
+    """
+    为知识实体生成不依赖数据库序列的稳定标识。
+    """
+    return uuid4().hex
+
+
+def timestamp() -> str:
+    """
+    保存统一的带时区 UTC 时间，不把录入时间当作来源采集时间。
+    """
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+class KnowledgeRecord:
+    """
+    知识管理实体共用的身份、并发版本和维护时间。
+
+    :cvar id: 服务器生成的稳定标识
+    :cvar version: 乐观并发版本，每次成功修改递增
+    :cvar created_at: 首次创建时间
+    :cvar updated_at: 最近管理修改时间
+    """
+
+    id = Column(String(32), primary_key=True, default=new_identity)
+    version = Column(Integer, nullable=False, default=1, comment="乐观并发版本")
+    created_at = Column(String(40), nullable=False, default=timestamp, comment="创建时间")
+    updated_at = Column(String(40), nullable=False, default=timestamp, comment="最近修改时间")
+
+
+class KnowledgeCollection(KnowledgeRecord, Base):
+    """
+    管理和授权知识的稳定集合；名称不限制为内置分类。
+    """
+
+    __tablename__ = "KNOWLEDGE_COLLECTION"
+    __table_args__ = (
+        CheckConstraint("domain IN ('mp', 'pt') AND version > 0", name="ck_knowledge_collection_domain"),
+    )
+
+    slug = Column(String(64), nullable=False, unique=True, comment="不可变集合标识")
+    name = Column(String(120), nullable=False, comment="集合显示名称")
+    description = Column(Text, nullable=False, default="", comment="集合用途")
+    domain = Column(String(8), nullable=False, comment="MP 或 PT 知识领域")
+    product = Column(String(64), nullable=False, default="", comment="对应产品，空值表示通用知识")
+    enabled = Column(Boolean, nullable=False, default=True, comment="是否允许后续授权与检索")
+
+
+class KnowledgeSite(KnowledgeRecord, Base):
+    """
+    独立维护站点身份；名称、域名与别名通过名称表统一排除歧义。
+    """
+
+    __tablename__ = "KNOWLEDGE_SITE"
+    __table_args__ = (
+        CheckConstraint("version > 0", name="ck_knowledge_site_version"),
+    )
+
+    name = Column(String(120), nullable=False, comment="站点显示名称")
+    domain = Column(String(253), nullable=False, unique=True, comment="规范化主域名")
+    enabled = Column(Boolean, nullable=False, default=True, comment="是否启用本站知识")
+
+
+class KnowledgeSiteName(Base):
+    """
+    站点名称与别名的全局唯一索引，禁止同一称呼指向两个站点。
+    """
+
+    __tablename__ = "KNOWLEDGE_SITE_NAME"
+
+    normalized = Column(String(253), primary_key=True, comment="规范化名称或域名")
+    site_id = Column(String(32), ForeignKey("KNOWLEDGE_SITE.id"), nullable=False, index=True, comment="所属站点")
+    label = Column(String(253), nullable=False, comment="保留显示形式的名称")
+    kind = Column(String(16), nullable=False, comment="名称、域名或人工别名")
+
+
+class KnowledgeSource(KnowledgeRecord, Base):
+    """
+    后台维护的来源配置；本表只允许非敏感定位与解析参数。
+    """
+
+    __tablename__ = "KNOWLEDGE_SOURCE"
+    __table_args__ = (
+        CheckConstraint("connector IN ('manual', 'jsonl', 'github', 'http', 'nexusphp')", name="ck_knowledge_source_connector"),
+        CheckConstraint("refresh_minutes >= 0 AND version > 0", name="ck_knowledge_source_refresh"),
+        Index("ix_knowledge_source_collection", "collection_id", "enabled"),
+    )
+
+    collection_id = Column(String(32), ForeignKey("KNOWLEDGE_COLLECTION.id"), nullable=False, comment="所属集合")
+    site_id = Column(String(32), ForeignKey("KNOWLEDGE_SITE.id"), nullable=True, index=True, comment="可选站点")
+    name = Column(String(120), nullable=False, comment="来源显示名称")
+    connector = Column(String(16), nullable=False, comment="受支持的采集连接器")
+    url = Column(String(2048), nullable=False, default="", comment="不含凭据的 HTTPS 来源地址")
+    repository = Column(String(160), nullable=False, default="", comment="GitHub 仓库所有者与名称")
+    branch = Column(String(128), nullable=False, default="main", comment="指定仓库分支")
+    paths = Column(Text, nullable=False, default="[]", comment="受限页面或仓库路径列表")
+    selector = Column(String(200), nullable=False, default="", comment="正文选择器，不执行脚本")
+    refresh_minutes = Column(Integer, nullable=False, default=0, comment="刷新间隔分钟，零表示仅手动")
+    enabled = Column(Boolean, nullable=False, default=False, comment="是否允许后续采集")
+
+
+class KnowledgeDocument(KnowledgeRecord, Base):
+    """
+    绑定来源和外部身份的文档；修订正文单独追加，不能原地覆盖。
+    """
+
+    __tablename__ = "KNOWLEDGE_DOCUMENT"
+    __table_args__ = (
+        UniqueConstraint("source_id", "external_id", name="uq_knowledge_document_identity"),
+        CheckConstraint("head_revision >= 1 AND version > 0", name="ck_knowledge_document_revision"),
+    )
+
+    source_id = Column(String(32), ForeignKey("KNOWLEDGE_SOURCE.id"), nullable=False, index=True, comment="固定来源")
+    external_id = Column(String(512), nullable=False, comment="来源内稳定身份")
+    head_revision = Column(Integer, nullable=False, default=1, comment="最新修订号")
+    published_revision = Column(Integer, nullable=True, comment="已发布修订号，尚未发布为 null")
+
+
+class KnowledgeRevision(Base):
+    """
+    不可变的手工或采集修订，保留未知的版本和采集时间。
+    """
+
+    __tablename__ = "KNOWLEDGE_REVISION"
+    __table_args__ = (
+        UniqueConstraint("document_id", "number", name="uq_knowledge_revision_number"),
+        CheckConstraint("number > 0", name="ck_knowledge_revision_number"),
+        CheckConstraint("version_scope IN ('unknown', 'all', 'range')", name="ck_knowledge_revision_scope"),
+        CheckConstraint("state IN ('draft', 'review', 'published', 'superseded', 'withdrawn')", name="ck_knowledge_revision_state"),
+    )
+
+    id = Column(String(32), primary_key=True, default=new_identity)
+    document_id = Column(String(32), ForeignKey("KNOWLEDGE_DOCUMENT.id"), nullable=False, index=True, comment="所属文档")
+    number = Column(Integer, nullable=False, comment="文档内修订号")
+    title = Column(String(300), nullable=False, comment="文档标题")
+    content = Column(Text, nullable=False, comment="私有知识正文")
+    content_hash = Column(String(64), nullable=False, comment="正文完整性摘要")
+    product = Column(String(64), nullable=False, default="", comment="适用产品")
+    version_scope = Column(String(16), nullable=False, default="unknown", comment="未知、通用或明确版本范围")
+    min_version = Column(String(32), nullable=True, comment="稳定版本范围下界，含边界")
+    max_version = Column(String(32), nullable=True, comment="稳定版本范围上界，含边界")
+    source_url = Column(String(2048), nullable=False, default="", comment="不含凭据的出处")
+    source_commit = Column(String(64), nullable=False, default="", comment="来源明确提供的源码快照")
+    fetched_at = Column(String(40), nullable=True, comment="已知的实际采集时间")
+    valid_until = Column(String(40), nullable=True, comment="有效期截止时间")
+    state = Column(String(16), nullable=False, default="draft", comment="发布生命周期状态")
+    created_at = Column(String(40), nullable=False, default=timestamp, comment="中心录入时间")
+    created_by = Column(String(64), nullable=False, comment="维护者或后续采集任务身份")

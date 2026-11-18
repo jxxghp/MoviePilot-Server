@@ -2,6 +2,7 @@
 数据库模型导入
 """
 from app.models.base import Base, get_id_column
+from app.models import knowledge as _knowledge  # 注册知识表，供统一结构初始化创建。
 from app.models.mapping import MediaMapping
 from app.models.admin import AdminAudit, AdminSetting, AdminUser
 from app.models.plugin_rating import PluginRating, PluginRatingSummary
