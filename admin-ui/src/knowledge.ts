@@ -30,6 +30,19 @@ export interface Revision {
 export interface Document extends Omit<Entity, 'name' | 'enabled'> {
   source_id: string; external_id: string; head_revision: number; published_revision: number | null; revision: Revision
 }
+export interface Client extends Entity { expires_at: string | null; collection_ids: string[]; created_at: string }
+export interface IssuedClient extends Client { token: string }
+export interface ImportSummary { rows?: number; actions?: Record<string, number>; flags?: Record<string, number> }
+export interface ImportBatch {
+  id: string; version: number; source_id: string; source_version: number; status: string; size_bytes: number
+  plan_hash: string; error_code: string; current_job_id: string | null; expires_at: number; created_at: string
+  summary: ImportSummary; result: Record<string, number>; job?: Job | null; configuration?: Record<string, unknown>
+}
+export interface ImportRow {
+  line: number; external_id?: string; title?: string; document_id: string | null; base_revision?: number | null
+  action: string; flags: string[]; revision?: number | null
+  base?: { title: string; content: string } | null; candidate?: { title: string; content: string } | null
+}
 export const kinds: Record<Kind, string> = { sources: '来源', sites: '站点', collections: '集合' }
 export const connectors = { manual: '手工', jsonl: 'JSONL 导入', github: 'GitHub', http: 'HTTP / Wiki', nexusphp: 'NexusPHP' }
 export const labels: Record<string, string> = {
@@ -38,6 +51,7 @@ export const labels: Record<string, string> = {
   repository: '仓库', branch: '分支', paths: '允许路径', selector: '正文选择器', refresh_minutes: '刷新间隔',
   title: '标题', content: '正文', version_scope: '版本范围', min_version: '最低版本', max_version: '最高版本',
   source_url: '出处', source_commit: '来源提交', fetched_at: '采集时间', valid_until: '有效截止时间',
+  collection_ids: '授权集合', expires_at: '到期时间',
 }
 const codes: Record<string, string> = {
   queued: '排队中', running: '运行中', succeeded: '已完成', failed: '失败', cancelled: '已取消',
@@ -51,6 +65,12 @@ const codes: Record<string, string> = {
   knowledge_source_changed: '来源已更新，请重新打开', knowledge_source_unavailable: '请检查来源、集合和站点的启用状态',
   knowledge_credential_changed: '来源或凭据已更新，请重新打开', knowledge_product_required: '版本范围需要明确的产品标识',
   knowledge_candidate_changed: '候选已更新，请重新打开', knowledge_candidate_document_changed: '文档已更新，请重新审阅候选',
+  uploading: '上传中', uploaded: '已上传，待预检', upload_failed: '上传未完成', preflight_queued: '预检排队中', ready: '预检完成',
+  blocked: '需处理', apply_queued: '导入排队中', imported: '已导入待审', expired: '已到期', conflict: '人工修订冲突', skipped: '已跳过',
+  preflight_ready: '预检完成', preflight_blocked: '预检被阻止', filtered_origin: '外部来源未被选中', scope_unknown: '版本适用范围未知',
+  scope_mismatch: '知识归属或范围不一致', invalid_record: '记录字段无效', invalid_json: 'JSON 格式无效', invalid_identity: '文档身份无效',
+  unmapped_origin: '外部来源未明确映射', unmapped_fields: '存在未映射字段', duplicate_identity: '文档身份重复', duplicate_content: '正文重复',
+  manual_revision: '保护人工修订', empty_selection: '没有选中的记录', plan_stale: '预检计划已失效', source_changed: '来源已改变', document_changed: '文档已改变',
 }
 /** 服务端固定代码转为短提示，未知代码仍保留以便查阅任务回执。 */
 export function text(value: string | null | undefined) { return value ? codes[value] || value : '—' }
@@ -67,13 +87,14 @@ export function formFor(kind: Kind, item?: Partial<CatalogItem>): Form {
     paths: item?.paths?.join('\n') || '', selector: item?.selector || '', refresh_minutes: item?.refresh_minutes || 0, enabled: item?.enabled ?? false }
 }
 /** 服务端分页保留最新请求，卸载和切换筛选后旧响应不能覆盖当前视图。 */
-export function usePage<T>(endpoint: () => string, filters: () => Record<string, string> = () => ({}), size = 30) {
+export function usePage<T>(endpoint: () => string, filters: () => Record<string, string> = () => ({}), size = 30, allowed: () => boolean = () => true) {
   const rows = ref<T[]>([]), query = ref(''), page = ref(1), total = ref(0), loading = ref(false), error = ref('')
   let sequence = 0, disposed = false, controller: AbortController | undefined
   const pages = computed(() => Math.max(1, Math.ceil(total.value / size)))
   /** 每次读取有独立序号，即使服务器未及时取消也不接纳过时结果。 */
   async function load(reset = false): Promise<void> {
     if (disposed) return
+    if (!allowed()) { sequence++; controller?.abort(); rows.value = []; total.value = 0; loading.value = false; return }
     if (reset) page.value = 1
     const current = ++sequence
     controller?.abort(); controller = new AbortController(); loading.value = true; error.value = ''; rows.value = []
@@ -87,7 +108,7 @@ export function usePage<T>(endpoint: () => string, filters: () => Record<string,
     } catch (reason) { if (current === sequence) error.value = message(reason) }
     finally { if (current === sequence) loading.value = false }
   }
-  watch(endpoint, () => load(true)); onMounted(() => load())
+  watch(endpoint, () => load(true)); watch(allowed, () => load(true)); onMounted(() => load())
   onBeforeUnmount(() => { disposed = true; sequence++; controller?.abort(); rows.value = [] })
   return { rows, query, page, total, pages, loading, error, load }
 }

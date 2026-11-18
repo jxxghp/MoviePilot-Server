@@ -9,7 +9,6 @@ import Features from '@/pages/Features.vue'
 import System from '@/pages/System.vue'
 import Users from '@/pages/Users.vue'
 import Push from '@/pages/Push.vue'
-import Knowledge from '@/pages/Knowledge.vue'
 import { notify } from '@/api'
 
 export const router = createRouter({
@@ -26,7 +25,7 @@ export const router = createRouter({
       { path: 'recognition', component: Recognition, meta: { title: '识别缓存' } },
       { path: 'media-mappings', component: DataPage, meta: { title: '媒体对应关系', kind: 'media-mappings' } },
       { path: 'features', component: Features, meta: { title: '权限与功能' } },
-      { path: 'knowledge', component: Knowledge, meta: { title: '知识中心' } },
+      { path: 'knowledge', component: () => import('@/pages/Knowledge.vue'), meta: { title: '知识中心' } },
       { path: 'system', component: System, meta: { title: '服务与维护' } },
       { path: 'users', component: Users, meta: { title: '用户管理', super: true } },
       { path: 'push', component: Push, meta: { title: '推送实例', super: true } },
