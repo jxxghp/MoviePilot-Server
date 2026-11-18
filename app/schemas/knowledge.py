@@ -93,6 +93,55 @@ class CollectionUpdate(CollectionPayload):
     expected_version: int = Field(ge=1, description="读取表单时的并发版本")
 
 
+class ClientPayload(KnowledgePayload):
+    """
+    超级管理员明确维护客户端状态及集合范围，不接收自报身份或明文令牌。
+    """
+
+    name: str = Field(min_length=1, max_length=120, description="客户端显示标签")
+    enabled: bool = Field(default=True, description="是否允许使用知识服务")
+    expires_at: datetime | None = Field(default=None, description="带时区的截止时间，null 为不设期限")
+    collection_ids: list[Annotated[str, Field(pattern=r"^[a-f0-9]{32}$")]] = Field(
+        default_factory=list, max_length=100, description="明确授权的集合 ID，空列表不授予任何读取权限",
+    )
+
+    @field_validator("expires_at")
+    @classmethod
+    def expiry_timezone(cls, value: datetime | None) -> datetime | None:
+        """
+        令牌到期使用统一 UTC，拒绝依赖服务器本地时区猜测。
+        """
+        if value is not None and value.utcoffset() is None:
+            raise ValueError("截止时间必须包含时区")
+        return value.astimezone(timezone.utc) if value is not None else None
+
+    @field_validator("collection_ids")
+    @classmethod
+    def distinct_collections(cls, values: list[str]) -> list[str]:
+        """
+        显式拒绝重复授权，避免列表数量与实际权限不一致。
+        """
+        if len(values) != len(set(values)):
+            raise ValueError("不能重复填写同一集合")
+        return sorted(values)
+
+
+class ClientUpdate(ClientPayload):
+    """
+    按读取版本替换客户端状态和完整授权列表，不能覆盖并发轮换结果。
+    """
+
+    expected_version: int = Field(ge=1, description="读取客户端时的并发版本")
+
+
+class CredentialRotation(KnowledgePayload):
+    """
+    轮换只接受当前版本，新令牌始终由中心生成。
+    """
+
+    expected_version: int = Field(ge=1, description="读取客户端时的并发版本")
+
+
 class SitePayload(KnowledgePayload):
     """
     创建站点及别名；名称与域名也参与全局歧义检查。

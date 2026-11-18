@@ -27,7 +27,7 @@ PASSWORD = "synthetic-knowledge-password-123"
 ROOT = "/admin/api/knowledge"
 
 
-def run_scenario(monkeypatch, scenario, *, database_url="sqlite+aiosqlite:///:memory:"):
+def run_scenario(monkeypatch, scenario, *, database_url="sqlite+aiosqlite:///:memory:", extra_router=None):
     """
     使用真实 ASGI、管理员会话和外键校验，不访问运行期 SQL 或 Redis。
     """
@@ -67,6 +67,8 @@ def run_scenario(monkeypatch, scenario, *, database_url="sqlite+aiosqlite:///:me
 
         app = FastAPI()
         app.include_router(router)
+        if extra_router is not None:
+            app.include_router(extra_router)
         app.dependency_overrides[get_db] = isolated_db
         try:
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

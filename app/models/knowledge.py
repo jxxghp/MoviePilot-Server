@@ -1,5 +1,5 @@
 """
-中心知识的集合、站点、来源和不可变文档修订。
+中心知识的集合、站点、来源、文档修订与独立访问授权。
 
 本阶段只保存受控管理数据，不向公共接口发布正文或启动采集。
 """
@@ -160,3 +160,31 @@ class KnowledgeRevision(Base):
     state = Column(String(16), nullable=False, default="draft", comment="发布生命周期状态")
     created_at = Column(String(40), nullable=False, default=timestamp, comment="中心录入时间")
     created_by = Column(String(64), nullable=False, comment="维护者或后续采集任务身份")
+
+
+class KnowledgeClient(KnowledgeRecord, Base):
+    """
+    中心签发的独立知识客户端；仅存随机令牌摘要，不复用推送或后台会话。
+    """
+
+    __tablename__ = "KNOWLEDGE_CLIENT"
+    __table_args__ = (
+        CheckConstraint("version > 0", name="ck_knowledge_client_version"),
+    )
+
+    name = Column(String(120), nullable=False, comment="管理员维护的客户端标签，不作为身份凭证")
+    token_hash = Column(String(64), nullable=False, unique=True, comment="当前随机令牌的 SHA-256 摘要")
+    enabled = Column(Boolean, nullable=False, default=True, comment="是否允许使用知识服务")
+    expires_at = Column(String(40), nullable=True, comment="带时区的令牌截止时间，空值表示不设期限")
+
+
+class KnowledgeGrant(Base):
+    """
+    超级管理员明确分配的集合读取范围；没有记录不代表可以读取全部集合。
+    """
+
+    __tablename__ = "KNOWLEDGE_GRANT"
+
+    client_id = Column(String(32), ForeignKey("KNOWLEDGE_CLIENT.id"), primary_key=True, comment="已签发客户端")
+    collection_id = Column(String(32), ForeignKey("KNOWLEDGE_COLLECTION.id"), primary_key=True,
+                           index=True, comment="被授权读取的集合")

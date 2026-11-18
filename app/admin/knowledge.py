@@ -7,14 +7,14 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.admin.auth import AdminIdentity, administrator
+from app.admin.auth import AdminIdentity, administrator, super_administrator
 from app.core.config import settings
 from app.db.deps import get_db
 from app.schemas.knowledge import (
-    CollectionPayload, CollectionUpdate, DocumentPayload, RevisionCreate,
+    ClientPayload, ClientUpdate, CollectionPayload, CollectionUpdate, CredentialRotation, DocumentPayload, RevisionCreate,
     SitePayload, SiteUpdate, SourcePayload, SourceUpdate,
 )
-from app.services.knowledge import catalog, documents
+from app.services.knowledge import access, catalog, documents
 
 
 async def no_store(response: Response) -> None:
@@ -42,7 +42,11 @@ class KnowledgeRoute(APIRoute):
             try:
                 return await handler(request)
             except RequestValidationError as error:
-                raise HTTPException(422, "知识表单字段无效，请检查来源地址、版本和必填项") from error
+                raise HTTPException(422, "知识表单字段无效，请检查来源地址、版本和必填项",
+                                    headers={"Cache-Control": "no-store"}) from error
+            except HTTPException as error:
+                error.headers = {**(error.headers or {}), "Cache-Control": "no-store"}
+                raise
 
         return validate
 
@@ -176,3 +180,47 @@ async def append_revision(item_id: str, payload: RevisionCreate, identity: Admin
     追加新草稿，不原地修改旧版或自动发布。
     """
     return await documents.append_revision(db, item_id, payload, identity.user.username)
+
+
+@router.get("/clients", dependencies=[Depends(super_administrator)])
+async def clients(q: str = Query("", max_length=120), page: int = Query(1, ge=1),
+                  size: int = Query(30, ge=1, le=100), db: AsyncSession = Depends(get_db)):
+    """
+    只有超级管理员可以分页查看独立客户端与集合授权。
+    """
+    return await access.list_clients(db, q, page, size)
+
+
+@router.get("/clients/{item_id}", dependencies=[Depends(super_administrator)])
+async def read_client(item_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    超级管理员刷新客户端版本；历史明文令牌无法读取。
+    """
+    return await access.read_client(db, item_id)
+
+
+@router.post("/clients", status_code=201)
+async def create_client(payload: ClientPayload, identity: AdminIdentity = Depends(super_administrator),
+                        db: AsyncSession = Depends(get_db)):
+    """
+    中心签发新客户端，令牌仅在成功创建时显示一次。
+    """
+    return await access.create_client(db, payload, identity.user.username)
+
+
+@router.put("/clients/{item_id}")
+async def update_client(item_id: str, payload: ClientUpdate, identity: AdminIdentity = Depends(super_administrator),
+                        db: AsyncSession = Depends(get_db)):
+    """
+    超级管理员按版本维护启停、到期时间和完整集合授权。
+    """
+    return await access.update_client(db, item_id, payload, identity.user.username)
+
+
+@router.post("/clients/{item_id}/rotate")
+async def rotate_client(item_id: str, payload: CredentialRotation, identity: AdminIdentity = Depends(super_administrator),
+                        db: AsyncSession = Depends(get_db)):
+    """
+    轮换后旧令牌立即影响后续请求，新令牌只在本次成功响应中出现。
+    """
+    return await access.rotate_client(db, item_id, payload.expected_version, identity.user.username)
