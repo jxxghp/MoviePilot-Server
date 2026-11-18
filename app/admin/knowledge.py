@@ -104,6 +104,12 @@ async def update_collection(item_id: str, payload: CollectionUpdate, identity: A
     return await catalog.update_collection(db, item_id, payload, identity.user.username)
 
 
+@router.get("/collections/{item_id}")
+async def read_collection(item_id: str, db: AsyncSession = Depends(get_db)):
+    """编辑表单按稳定 ID 取得最新版本和归属锁定状态。"""
+    return await catalog.read_item(db, "collections", item_id)
+
+
 @router.get("/sites")
 async def sites(q: str = Query("", max_length=120), page: int = Query(1, ge=1),
                 size: int = Query(30, ge=1, le=100), db: AsyncSession = Depends(get_db)):
@@ -131,14 +137,22 @@ async def update_site(item_id: str, payload: SiteUpdate, identity: AdminIdentity
     return await catalog.update_site(db, item_id, payload, identity.user.username)
 
 
+@router.get("/sites/{item_id}")
+async def read_site(item_id: str, db: AsyncSession = Depends(get_db)):
+    """按稳定 ID 返回当前站点及完整别名，不受名称搜索分页限制。"""
+    return await catalog.read_item(db, "sites", item_id)
+
+
 @router.get("/sources")
 async def sources(q: str = Query("", max_length=120), page: int = Query(1, ge=1),
                   size: int = Query(30, ge=1, le=100), collection_id: str | None = Query(None, max_length=32),
+                  site_id: str | None = Query(None, max_length=32),
+                  connector: str | None = Query(None, pattern=r"^(manual|jsonl|github|http|nexusphp)$"),
                   db: AsyncSession = Depends(get_db)):
     """
     分页查看指定集合内的来源配置，不返回任何采集秘密。
     """
-    return await catalog.list_items(db, "sources", q, page, size, collection_id)
+    return await catalog.list_items(db, "sources", q, page, size, collection_id, site_id, connector)
 
 
 @router.post("/sources", status_code=201)
@@ -157,6 +171,12 @@ async def update_source(item_id: str, payload: SourceUpdate, identity: AdminIden
     更新来源白名单字段，防止改变已有文档的集合归属。
     """
     return await catalog.update_source(db, item_id, payload, identity.user.username)
+
+
+@router.get("/sources/{item_id}")
+async def read_source(item_id: str, db: AsyncSession = Depends(get_db)):
+    """刷新来源版本与身份 / 凭据绑定状态，不解密任何认证材料。"""
+    return await catalog.read_item(db, "sources", item_id)
 
 
 @router.get("/sources/{item_id}/credential")
@@ -372,6 +392,12 @@ async def cancel_job(item_id: str, payload: VersionAction, identity: AdminIdenti
     result = await jobs.cancel_job(db, item_id, payload.expected_version, identity.user.username)
     await catalog.commit(db)
     return result
+
+
+@router.get("/jobs/{item_id}")
+async def read_job(item_id: str, db: AsyncSession = Depends(get_db)):
+    """按 ID 查看当前任务状态，避免深链依赖其仍位于列表第一页。"""
+    return jobs.job_data(await catalog.get_row(db, KnowledgeJob, item_id))
 
 
 def import_directory():

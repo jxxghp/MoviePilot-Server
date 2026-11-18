@@ -28,7 +28,7 @@ def test_admin_headers_cover_pages_assets_redirects_and_errors(tmp_path, monkeyp
 
         static.install_admin_pages(app)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            for path, status in [("/admin", 307), ("/admin/", 200), ("/admin/assets/app.js", 200),
+            for path, status in [("/admin", 307), ("/admin/", 200), ("/admin/knowledge?view=documents", 200), ("/admin/assets/app.js", 200),
                                  ("/admin/api/denied", 401), ("/admin/api/missing", 404), ("/admin/missing", 404)]:
                 response = await client.get(path)
                 assert response.status_code == status

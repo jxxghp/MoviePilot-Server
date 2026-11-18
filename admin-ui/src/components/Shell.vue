@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { LayoutDashboard, ChartColumnIncreasing, ListVideo, Share2, Puzzle, Database, ShieldCheck, Settings2, Users, History, Menu, LogOut, KeyRound, ChevronDown } from '@lucide/vue'
+import { LayoutDashboard, ChartColumnIncreasing, ListVideo, Share2, Puzzle, Database, BookOpen, ShieldCheck, Settings2, Users, History, Menu, LogOut, KeyRound, ChevronDown } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -16,6 +16,7 @@ const allNav = [
   { path: '/subscriptions', label: '订阅数据', icon: ListVideo }, { path: '/shares', label: '共享内容', icon: Share2 },
   { path: '/plugins', label: '插件数据', icon: Puzzle }, { path: '/recognition', label: '识别缓存', icon: Database },
   { path: '/media-mappings', label: '媒体对应关系', icon: ListVideo },
+  { path: '/knowledge', label: '知识中心', icon: BookOpen },
   { path: '/features', label: '权限与功能', icon: ShieldCheck }, { path: '/system', label: '服务与维护', icon: Settings2 },
   { path: '/users', label: '用户管理', icon: Users, super: true }, { path: '/audit', label: '操作记录', icon: History },
   { path: '/push', label: '推送实例', icon: ShieldCheck, super: true },

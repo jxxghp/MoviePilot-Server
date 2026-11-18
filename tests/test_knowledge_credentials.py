@@ -100,6 +100,9 @@ def test_roles_csrf_ciphertext_and_metadata_never_return_secret(monkeypatch, tmp
             assert len(audits) == 1 and SECRET not in audits[0].detail and row.ciphertext not in audits[0].detail
         await login(client, "editor")
         assert (await client.get(path)).json() == item
+        origin_detail = await client.get(ROOT + "/sources/" + origin["id"])
+        assert origin_detail.json()["has_credential"] is True and origin_detail.json()["version"] == 2
+        assert all(value not in origin_detail.text for value in (SECRET, "ciphertext", "nonce", "key_id"))
         monkeypatch.setattr(settings, "KNOWLEDGE_KEY_FILE", "")
         assert (await client.get(path)).json()["state"] == "unavailable"
     run_scenario(monkeypatch, scenario)

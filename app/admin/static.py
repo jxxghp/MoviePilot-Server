@@ -56,7 +56,7 @@ def install_admin_pages(app: FastAPI) -> None:
             raise HTTPException(404, "管理接口不存在")
         if path == "logo.png":
             file = DIST / "logo.png"
-        elif path in {"", "login", "overview", "usage", "subscriptions", "shares", "plugins", "recognition", "media-mappings", "features", "system", "users", "push", "audit"}:
+        elif path in {"", "login", "overview", "usage", "subscriptions", "shares", "plugins", "recognition", "media-mappings", "features", "system", "knowledge", "users", "push", "audit"}:
             file = DIST / "index.html"
         else:
             raise HTTPException(404, "页面不存在")

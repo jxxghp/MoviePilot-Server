@@ -55,7 +55,8 @@ def metadata(kind: CatalogKind, row) -> dict:
 
 
 async def list_items(db: AsyncSession, kind: CatalogKind, q: str, page: int, size: int,
-                     collection_id: str | None = None) -> dict:
+                     collection_id: str | None = None, site_id: str | None = None,
+                     connector: str | None = None) -> dict:
     """
     使用有界分页读取真实记录，别名在同批查询中补全。
     """
@@ -65,6 +66,10 @@ async def list_items(db: AsyncSession, kind: CatalogKind, q: str, page: int, siz
         conditions.append(model.name.icontains(q, autoescape=True))
     if kind == "sources" and collection_id:
         conditions.append(model.collection_id == collection_id)
+    if kind == "sources" and site_id:
+        conditions.append(model.site_id == site_id)
+    if kind == "sources" and connector:
+        conditions.append(model.connector == connector)
     total = await db.scalar(select(func.count()).select_from(model).where(*conditions))
     rows = list((await db.scalars(select(model).where(*conditions).order_by(model.created_at.desc(), model.id)
                                  .offset((page - 1) * size).limit(size))).all())
@@ -79,6 +84,25 @@ async def list_items(db: AsyncSession, kind: CatalogKind, q: str, page: int, siz
         for item in items:
             item["aliases"] = grouped.get(item["id"], [])
     return {"items": items, "total": total or 0, "page": page, "size": size}
+
+
+async def read_item(db: AsyncSession, kind: CatalogKind, identity: str) -> dict:
+    """表单按 ID 刷新当前版本与身份锁定状态，不从旧分页结果推测可编辑字段。"""
+    row = await get_row(db, MODELS[kind], identity)
+    item = metadata(kind, row)
+    if kind == "sites":
+        item["aliases"] = list((await db.scalars(select(KnowledgeSiteName.label).where(
+            KnowledgeSiteName.site_id == identity, KnowledgeSiteName.kind == "alias",
+        ).order_by(KnowledgeSiteName.normalized))).all())
+    if kind in {"collections", "sites"}:
+        field = KnowledgeSource.collection_id if kind == "collections" else KnowledgeSource.site_id
+        item["has_sources"] = bool(await db.scalar(select(KnowledgeSource.id).where(field == identity).limit(1)))
+    else:
+        item["has_documents"] = bool(await db.scalar(select(KnowledgeDocument.id).where(
+            KnowledgeDocument.source_id == identity).limit(1)))
+        item["has_credential"] = bool(await db.scalar(select(KnowledgeCredential.id).where(
+            KnowledgeCredential.source_id == identity).limit(1)))
+    return item
 
 
 async def commit(db: AsyncSession) -> None:

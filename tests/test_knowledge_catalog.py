@@ -112,6 +112,64 @@ async def manual_source(client, headers, collection_id):
     return response.json()
 
 
+def test_current_details_dependency_flags_and_source_filters(monkeypatch):
+    """编辑器按 ID 得到最新版本和身份锁定，筛选在 SQL 分页前生效。"""
+    async def scenario(client, _sessions, _redis):
+        """普通管理员可维护元数据，匿名、缺失记录和无效筛选仍受统一边界保护。"""
+        assert (await client.get(ROOT + "/collections/" + "a" * 32)).status_code == 401
+        headers = await login(client, "editor")
+        parent = await collection(client, headers)
+        detail = await client.get(ROOT + "/collections/" + parent["id"])
+        assert detail.json()["version"] == 1 and detail.json()["has_sources"] is False
+        registered = (await client.post(ROOT + "/sites", headers=headers, json={
+            "name": "合成站点", "domain": "synthetic.example", "aliases": ["合成别名", "synthetic-alias"],
+        })).json()
+        origin = (await client.post(ROOT + "/sources", headers=headers, json={
+            "name": "合成 HTTP", "collection_id": parent["id"], "site_id": registered["id"],
+            "connector": "http", "url": "https://synthetic.example/rules",
+        })).json()
+        manual = await manual_source(client, headers, parent["id"])
+        assert (await client.get(ROOT + "/collections/" + parent["id"])).json()["has_sources"] is True
+        site = (await client.get(ROOT + "/sites/" + registered["id"])).json()
+        assert site["has_sources"] is True and set(site["aliases"]) == {"合成别名", "synthetic-alias"}
+        source = await client.get(ROOT + "/sources/" + origin["id"])
+        assert source.headers["cache-control"] == "no-store"
+        assert source.json()["has_documents"] is False and source.json()["has_credential"] is False
+        filtered = (await client.get(ROOT + "/sources", params={"site_id": registered["id"], "size": 1})).json()
+        assert filtered["total"] == 1 and filtered["items"][0]["id"] == origin["id"]
+        filtered = (await client.get(ROOT + "/sources", params={"connector": "manual", "size": 1})).json()
+        assert filtered["total"] == 1 and filtered["items"][0]["id"] == manual["id"]
+        document = await client.post(ROOT + "/documents", headers=headers, json={
+            "source_id": manual["id"], "external_id": "synthetic", "title": "合成知识", "content": "合成正文",
+        })
+        assert document.status_code == 201
+        assert (await client.get(ROOT + "/sources/" + manual["id"])).json()["has_documents"] is True
+        bad = await client.get(ROOT + "/sources", params={"connector": "do-not-echo-this-value"})
+        assert bad.status_code == 422 and "do-not-echo-this-value" not in bad.text
+        for kind in ("collections", "sites", "sources"):
+            missing = await client.get(ROOT + "/" + kind + "/" + "f" * 32)
+            assert missing.status_code == 404 and missing.headers["cache-control"] == "no-store"
+    run_scenario(monkeypatch, scenario)
+
+
+def test_job_detail_is_current_and_excludes_lease_secrets(monkeypatch):
+    """任务深链不依赖列表页，详情仍只包含公开给管理员的任务投影。"""
+    async def scenario(client, _sessions, _redis):
+        """手动排队、取消后按同一 ID 读取当前状态与版本。"""
+        headers = await login(client, "editor")
+        queued = (await client.post(ROOT + "/jobs/index", headers=headers, json={})).json()
+        detail = await client.get(ROOT + "/jobs/" + queued["id"])
+        assert detail.status_code == 200 and detail.json() == queued
+        assert detail.headers["cache-control"] == "no-store"
+        assert not {"lease_token", "lease_expires_at", "path", "payload"} & detail.json().keys()
+        cancelled = await client.post(ROOT + "/jobs/" + queued["id"] + "/cancel", headers=headers,
+                                      json={"expected_version": queued["version"]})
+        current = (await client.get(ROOT + "/jobs/" + queued["id"])).json()
+        assert cancelled.status_code == 200 and current["status"] == "cancelled" and current["version"] > queued["version"]
+        assert (await client.get(ROOT + "/jobs/" + "a" * 32)).status_code == 404
+    run_scenario(monkeypatch, scenario)
+
+
 def test_admin_session_csrf_disabled_service_and_audit(monkeypatch):
     """
     在线服务关闭时可维护草稿，匿名、跨站和失效角色仍不能访问。
