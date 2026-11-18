@@ -18,6 +18,7 @@ import test_knowledge_jobs as job_tests
 import test_knowledge_import as import_tests
 import test_knowledge_retrieval as retrieval_tests
 import test_knowledge_credentials as credential_tests
+import test_knowledge_collect as collect_tests
 
 DATABASE_URL = os.environ.get("KNOWLEDGE_TEST_DATABASE_URL", "")
 
@@ -51,6 +52,13 @@ DATABASE_URL = os.environ.get("KNOWLEDGE_TEST_DATABASE_URL", "")
     pytest.param(credential_tests.test_roles_csrf_ciphertext_and_metadata_never_return_secret, {}, id="source-secrets"),
     pytest.param(credential_tests.test_rewrap_uses_new_nonce_and_active_key_and_rejects_tampering, {}, id="source-key-rotation"),
     pytest.param(credential_tests.test_two_real_connections_cannot_overwrite_credential_or_target, {}, id="source-secret-race"),
+    pytest.param(collect_tests.test_real_tls_collection_requires_review_before_public_retrieval, {}, id="collect-flow"),
+    pytest.param(collect_tests.test_incremental_policy_and_manual_protection_survive_unchanged, {}, id="collect-manual"),
+    pytest.param(collect_tests.test_scheduler_initial_delay_due_queue_and_concurrent_manual_request, {}, id="collect-scheduler"),
+    pytest.param(collect_tests.test_retry_receipts_and_expired_owner_cannot_write, {}, id="collect-lease"),
+    pytest.param(collect_tests.test_sql_failure_after_revision_insert_rolls_back_and_retries_once, {}, id="collect-rollback"),
+    pytest.param(collect_tests.test_lost_commit_ack_does_not_duplicate_revision_or_receipt, {}, id="collect-lost-ack"),
+    pytest.param(collect_tests.test_manual_edit_during_network_is_protected, {}, id="collect-edit-during-fetch"),
 ])
 def test_postgresql_knowledge_contract(monkeypatch, tmp_path, case, options):
     """

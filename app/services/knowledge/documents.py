@@ -91,8 +91,9 @@ async def create_document(db: AsyncSession, payload: DocumentPayload, actor: str
 
 async def append_revision(db: AsyncSession, identity: str, payload: RevisionCreate, actor: str) -> dict:
     """
-    用文档并发版本追加草稿；旧版正文与已发布指针保持不变。
+    先锁知识事实再锁文档，和采集提交保持顺序；旧版与已发布指针保持不变。
     """
+    await jobs.lock_state(db)
     row = await get_row(db, KnowledgeDocument, identity, for_update=True)
     source = await get_row(db, KnowledgeSource, row.source_id, for_update=True)
     collection = await collection_for_source(db, source, payload)

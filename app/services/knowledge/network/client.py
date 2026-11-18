@@ -8,7 +8,9 @@ import re
 import socket
 import ssl
 import threading
+import time
 from dataclasses import dataclass, field
+from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin
 
 import aiohttp
@@ -92,6 +94,17 @@ def conditional(value: str | None) -> str | None:
     return value
 
 
+def retry_delay(value: str | None) -> int:
+    """只把有限数字或 HTTP 日期转为等待秒数，不将上游头值或异常原文持久化。"""
+    if not value or len(value) > 128:
+        return 60
+    try:
+        seconds = int(value) if value.isdecimal() else int(parsedate_to_datetime(value).timestamp() - time.time())
+        return max(1, min(seconds, 86400))
+    except (ValueError, TypeError, OverflowError):
+        return 60
+
+
 async def fetch(scope: SourceScope, url: str, auth: AuthMaterial | None = None,
                 *, etag: str | None = None, modified: str | None = None) -> FetchResult:
     """
@@ -137,7 +150,7 @@ async def fetch(scope: SourceScope, url: str, auth: AuthMaterial | None = None,
                         if result.status in {401, 403}:
                             raise NetworkError("authentication_rejected")
                         if result.status == 429:
-                            raise NetworkError("upstream_rate_limited")
+                            raise NetworkError("upstream_rate_limited", retry_after=retry_delay(result.headers.get("Retry-After")))
                         if result.status != 200:
                             raise NetworkError("upstream_status")
                         if result.headers.get("Content-Encoding", "identity").lower() != "identity":

@@ -267,6 +267,70 @@ class KnowledgeJobSlot(Base):
     job_id = Column(String(32), ForeignKey("KNOWLEDGE_JOB.id"), nullable=False, unique=True, comment="当前活动任务")
 
 
+class KnowledgeCollectState(Base):
+    """来源的明确版本策略、周期观察和最近任务；不保存知识正文或认证值。"""
+
+    __tablename__ = "KNOWLEDGE_COLLECT_STATE"
+
+    source_id = Column(String(32), ForeignKey("KNOWLEDGE_SOURCE.id"), primary_key=True)
+    source_version = Column(Integer, nullable=False, comment="调度器观察过的来源版本")
+    policy = Column(Text, nullable=False, default='{"version_scope":"unknown"}')
+    next_at = Column(Float, nullable=True, index=True, comment="下次周期检查，零间隔不自动执行")
+    last_job_id = Column(String(32), ForeignKey("KNOWLEDGE_JOB.id"), nullable=True)
+
+
+class KnowledgeCollectTask(Base):
+    """任务固定来源、凭据版本与策略，网络返回后仍需和当前 SQL 比较。"""
+
+    __tablename__ = "KNOWLEDGE_COLLECT_TASK"
+
+    job_id = Column(String(32), ForeignKey("KNOWLEDGE_JOB.id"), primary_key=True)
+    source_version = Column(Integer, nullable=False)
+    credential_version = Column(Integer, nullable=False)
+    policy = Column(Text, nullable=False)
+    result = Column(Text, nullable=False, default="{}")
+
+
+class KnowledgeCollectReceipt(Base):
+    """逐页无正文回执；只有真实 new / updated 写入能证明自动修订归属。"""
+
+    __tablename__ = "KNOWLEDGE_COLLECT_RECEIPT"
+    __table_args__ = (
+        CheckConstraint("outcome IN ('new','updated','unchanged','protected','failed','excluded')",
+                        name="ck_knowledge_collect_receipt"),
+    )
+
+    job_id = Column(String(32), ForeignKey("KNOWLEDGE_JOB.id"), primary_key=True)
+    external_id = Column(String(512), primary_key=True)
+    document_id = Column(String(32), ForeignKey("KNOWLEDGE_DOCUMENT.id"), nullable=True, index=True)
+    revision_number = Column(Integer, nullable=True)
+    base_revision = Column(Integer, nullable=True)
+    outcome = Column(String(16), nullable=False)
+    flags = Column(Text, nullable=False, default="[]")
+    source_commit = Column(String(64), nullable=False, default="")
+    candidate_id = Column(String(32), ForeignKey("KNOWLEDGE_COLLECT_CANDIDATE.id"), nullable=True)
+
+
+class KnowledgeCollectCandidate(KnowledgeRecord, Base):
+    """人工 head 的上游差异单独保留；相同内容 / 配置 / 文档版本复用候选，不能暗中覆盖。"""
+
+    __tablename__ = "KNOWLEDGE_COLLECT_CANDIDATE"
+    __table_args__ = (
+        UniqueConstraint("document_id", "document_version", "source_version", "fingerprint",
+                         name="uq_knowledge_collect_candidate"),
+    )
+
+    document_id = Column(String(32), ForeignKey("KNOWLEDGE_DOCUMENT.id"), nullable=False)
+    document_version = Column(Integer, nullable=False)
+    source_version = Column(Integer, nullable=False)
+    base_revision = Column(Integer, nullable=False)
+    fingerprint = Column(String(64), nullable=False)
+    payload = Column(Text, nullable=False, comment="仅中心私有 SQL 保存的受保护候选，不进列表或日志")
+    flags = Column(Text, nullable=False, default="[]")
+    applied_revision = Column(Integer, nullable=True)
+    discarded = Column(Boolean, nullable=False, default=False)
+
+
 class KnowledgeImport(KnowledgeRecord, Base):
     """
     私有 JSONL 批次的受控状态与计划摘要；正文不进入管理投影或审计。

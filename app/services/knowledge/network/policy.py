@@ -22,10 +22,11 @@ class NetworkError(RuntimeError):
     出站失败只携带固定状态，不携带上游响应、地址、认证头或第三方异常。
     """
 
-    def __init__(self, code: str):
+    def __init__(self, code: str, *, retry_after: int | None = None):
         """所有调用点只传固定代码，避免记录异常时泄露秘密。"""
         super().__init__(code)
         self.code = code
+        self.retry_after = max(1, min(retry_after, 86400)) if retry_after is not None else None
 
 
 def public_address(value: str) -> None:

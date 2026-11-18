@@ -21,7 +21,7 @@ JOB_FIELDS = ("id", "version", "kind", "source_id", "status", "attempts", "max_a
               "updated_at", "started_at", "finished_at", "created_by")
 TERMINAL = {"succeeded", "failed", "cancelled"}
 LEASE_SECONDS = 60
-ERROR_CODES = {"index_failed", "import_failed", "storage_failed", "database_failed", "fts_unavailable", "timeout"}
+ERROR_CODES = {"index_failed", "import_failed", "collect_failed", "storage_failed", "database_failed", "fts_unavailable", "timeout"}
 
 
 @dataclass(frozen=True)
@@ -124,17 +124,16 @@ async def claim(db: AsyncSession, *, now: float | None = None) -> JobLease | Non
     """
     clock = time.time() if now is None else now
     state = await lock_state(db)
+    active = set((await db.scalars(select(KnowledgeJob.kind).where(
+        KnowledgeJob.kind.in_(["import", "collect"]), KnowledgeJob.status == "running",
+        KnowledgeJob.lease_until > clock,
+    ))).all())
     candidates = (await db.scalars(select(KnowledgeJob).where(
-        KnowledgeJob.kind.in_(["index", "import"]),
+        KnowledgeJob.kind.in_(set(("index", "import", "collect")) - active),
         ((KnowledgeJob.status == "queued") & (KnowledgeJob.available_at <= clock)) |
         ((KnowledgeJob.status == "running") & (KnowledgeJob.lease_until <= clock)),
     ).order_by(KnowledgeJob.available_at, KnowledgeJob.id).limit(20).with_for_update())).all()
-    running_import = await db.scalar(select(KnowledgeJob.id).where(
-        KnowledgeJob.kind == "import", KnowledgeJob.status == "running", KnowledgeJob.lease_until > clock,
-    ).limit(1))
     for row in candidates:
-        if row.kind == "import" and running_import:
-            continue
         if row.cancel_requested or row.attempts >= row.max_attempts:
             row.status = "cancelled" if row.cancel_requested else "failed"
             row.outcome = "cancelled" if row.cancel_requested else "lease_expired"

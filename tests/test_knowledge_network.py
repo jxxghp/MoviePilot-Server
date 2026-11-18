@@ -232,7 +232,7 @@ def test_real_tls_refuses_untrusted_certificate_and_bounds_responses(monkeypatch
             if case == "unchanged":
                 return web.Response(status=304)
             if case in {"401", "429", "500"}:
-                return web.Response(status=int(case), text="must-not-echo-secret-response")
+                return web.Response(status=int(case), text="must-not-echo-secret-response", headers={"Retry-After": "120"})
             return web.Response(text="synthetic")
 
         runner, _sni, _checked, _port = await local_server(monkeypatch, tmp_path, handler)
@@ -251,6 +251,8 @@ def test_real_tls_refuses_untrusted_certificate_and_bounds_responses(monkeypatch
                 with pytest.raises(policy.NetworkError) as error:
                     await client.fetch(target, "https://docs.example/" + case)
                 assert error.value.code == expected
+                if case == "429":
+                    assert error.value.retry_after == 120
                 assert "must-not-echo" not in str(error.value)
             result = await client.fetch(target, "https://docs.example/unchanged")
             assert result.status == 304 and result.body == b""

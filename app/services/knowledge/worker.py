@@ -1,5 +1,5 @@
 """
-独立知识索引和导入执行器；不从 Web 生命周期启动，不输出知识或原文异常。
+独立知识采集、导入和索引执行器；不从 Web 生命周期启动，不输出知识或原文异常。
 """
 
 import argparse
@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.services.knowledge import indexes, jobs
 from app.services.knowledge.imports import catalog as import_catalog, files as import_files, worker as import_worker
 from app.services.knowledge.retrieval import storage as retrieval_storage
+from app.services.knowledge.collect import catalog as collect_catalog, worker as collect_worker
 
 logger = logging.getLogger(__name__)
 BUILD_TIMEOUT_SECONDS = 600
@@ -22,7 +23,7 @@ BUILD_TIMEOUT_SECONDS = 600
 
 class KnowledgeWorker:
     """
-    单进程顺序构建，多个进程共享数据库租约，失联执行器不能激活旧产物。
+    单进程顺序执行，多个进程共享租约，失联执行器不能写修订或激活旧索引。
     """
 
     def __init__(self, sessions, directory: Path):
@@ -50,12 +51,13 @@ class KnowledgeWorker:
 
     async def build(self, lease: jobs.JobLease) -> indexes.SnapshotBuilder | dict:
         """
-        同时监视构建和租约，及时停止已被取消或失去所有权的构建。
+        同时监视操作和租约，及时停止已被取消或失去所有权的执行。
         """
         stopped = asyncio.Event()
         renewal = asyncio.create_task(self.renew(lease, stopped))
         lost = asyncio.create_task(stopped.wait())
         operation = (indexes.build_snapshot(self.sessions, self.directory, lease.generation) if lease.kind == "index"
+                     else collect_worker.execute(self.sessions, lease) if lease.kind == "collect"
                      else import_worker.execute(self.sessions, import_files.import_directory(self.directory), lease))
         building = asyncio.create_task(operation)
         retained = False
@@ -78,7 +80,7 @@ class KnowledgeWorker:
 
     async def run_once(self) -> dict | None:
         """
-        只在在线开关启用时执行一个任务；成功构建与成功激活是不同结果。
+        只在在线开关启用时执行一项任务，区分采集待审、导入与索引激活。
         """
         if not settings.KNOWLEDGE_ENABLED:
             return None
@@ -87,6 +89,8 @@ class KnowledgeWorker:
         async with self.sessions() as db:
             await retrieval_storage.collect(db, self.directory)
         async with self.sessions() as db:
+            await collect_catalog.schedule(db)
+        async with self.sessions() as db:
             lease = await jobs.claim(db)
             await db.commit()
         if lease is None:
@@ -94,8 +98,10 @@ class KnowledgeWorker:
         builder = None
         activation_attempted = False
         try:
-            async with asyncio.timeout(BUILD_TIMEOUT_SECONDS):
+            async with asyncio.timeout(120 if lease.kind == "collect" else BUILD_TIMEOUT_SECONDS):
                 builder = await self.build(lease)
+            if lease.kind == "collect":
+                return builder
             if lease.kind == "import":
                 if builder["outcome"] in {"imported", "imported_with_skips"}:
                     with contextlib.suppress(OSError, SQLAlchemyError):
@@ -122,7 +128,8 @@ class KnowledgeWorker:
                     "fts_unavailable" if isinstance(error, indexes.FtsUnavailable) else
                     "database_failed" if isinstance(error, SQLAlchemyError) else
                     "storage_failed" if isinstance(error, OSError) else
-                    "import_failed" if lease.kind == "import" else "index_failed")
+                    "import_failed" if lease.kind == "import" else
+                    "collect_failed" if lease.kind == "collect" else "index_failed")
             async with self.sessions() as db:
                 outcome = await jobs.fail_job(db, lease, code)
                 await db.commit()

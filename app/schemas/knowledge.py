@@ -397,6 +397,28 @@ class DocumentPayload(RevisionPayload):
     external_id: str = Field(min_length=1, max_length=512, description="来源内稳定的文档标识")
 
 
+class CollectPolicy(VersionAction):
+    """来源的人工指定版本范围；不从 GitHub 分支名猜适用版本。"""
+
+    version_scope: Literal["unknown", "all", "range"] = "unknown"
+    min_version: str | None = Field(default=None, max_length=32)
+    max_version: str | None = Field(default=None, max_length=32)
+
+    @model_validator(mode="after")
+    def valid_scope(self):
+        """复用标准修订校验，保持网络采集、导入和手工范围规则一致。"""
+        revision = RevisionPayload(title="scope", content="scope", **self.model_dump(exclude={"expected_version"}))
+        self.min_version, self.max_version = revision.min_version, revision.max_version
+        return self
+
+
+class CollectCandidateAction(VersionAction):
+    """明确接受所审阅候选，还需核对当前文档版本并确认内容警告。"""
+
+    expected_document_version: int = Field(ge=1)
+    acknowledge_warnings: bool = False
+
+
 class RevisionCreate(RevisionPayload):
     """
     使用当前文档版本追加草稿，不修改旧修订正文。

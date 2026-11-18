@@ -16,13 +16,14 @@ from app.db.deps import get_db
 from app.models.knowledge import KnowledgeImport, KnowledgeJob, KnowledgeState
 from app.schemas.knowledge import (
     ClientPayload, ClientUpdate, CollectionPayload, CollectionUpdate, CredentialRotation, DocumentPayload, RevisionCreate,
-    ImportApproval, ImportPreflight, KnowledgePayload, PublicationAction,
+    CollectCandidateAction, CollectPolicy, ImportApproval, ImportPreflight, KnowledgePayload, PublicationAction,
     SitePayload, SiteUpdate, SourcePayload, SourceUpdate, SourceCredentialAction, SourceCredentialPayload, VersionAction,
 )
 from app.services.knowledge import access, catalog, documents, jobs
 from app.services.knowledge import indexes
 from app.services.knowledge.imports import catalog as import_catalog, files as import_files
 from app.services.knowledge.credentials import catalog as credential_catalog
+from app.services.knowledge.collect import catalog as collect_catalog
 
 
 async def no_store(response: Response) -> None:
@@ -186,6 +187,59 @@ async def rewrap_source_credential(item_id: str, payload: SourceCredentialAction
                                    db: AsyncSession = Depends(get_db)):
     """使用部署 active 密钥重新包封认证值，无须向后台浏览器返回明文。"""
     return await credential_catalog.rewrap(db, item_id, payload, identity.user.username)
+
+
+@router.get("/sources/{item_id}/collection")
+async def source_collection(item_id: str, db: AsyncSession = Depends(get_db)):
+    """查看来源明确采集策略和实际最近任务，不把排队当作采集完成。"""
+    return await collect_catalog.read(db, item_id)
+
+
+@router.put("/sources/{item_id}/collection")
+async def source_collection_policy(item_id: str, payload: CollectPolicy,
+                                    identity: AdminIdentity = Depends(administrator),
+                                    db: AsyncSession = Depends(get_db)):
+    """维护人工指定适用范围，保存策略不会直接出站。"""
+    return await collect_catalog.save_policy(db, item_id, payload, identity.user.username)
+
+
+@router.post("/sources/{item_id}/collect", status_code=202)
+async def collect_source(item_id: str, payload: VersionAction, identity: AdminIdentity = Depends(administrator),
+                          db: AsyncSession = Depends(get_db)):
+    """明确触发来源采集，返回可取消的持久化任务。"""
+    job = await collect_catalog.enqueue(db, item_id, payload.expected_version, identity.user.username)
+    result = jobs.job_data(job)
+    await catalog.commit(db)
+    return result
+
+
+@router.get("/jobs/{item_id}/collection")
+async def collection_receipts(item_id: str, page: int = Query(1, ge=1), size: int = Query(30, ge=1, le=100),
+                               db: AsyncSession = Depends(get_db)):
+    """分页查看采集的真实结果与固定警告，正文只经已鉴权的修订详情查看。"""
+    return await collect_catalog.receipts(db, item_id, page, size)
+
+
+@router.get("/collection/candidates/{item_id}")
+async def collection_candidate(item_id: str, db: AsyncSession = Depends(get_db)):
+    """对照人工版本与被保护的上游候选，不丢失待复核差异。"""
+    return await collect_catalog.read_candidate(db, item_id)
+
+
+@router.post("/collection/candidates/{item_id}/append")
+async def append_collection_candidate(item_id: str, payload: CollectCandidateAction,
+                                       identity: AdminIdentity = Depends(administrator),
+                                       db: AsyncSession = Depends(get_db)):
+    """管理员明确接受所审阅的上游内容，仍须单独批准发布。"""
+    return await collect_catalog.append_candidate(db, item_id, payload, identity.user.username)
+
+
+@router.post("/collection/candidates/{item_id}/discard")
+async def discard_collection_candidate(item_id: str, payload: VersionAction,
+                                        identity: AdminIdentity = Depends(administrator),
+                                        db: AsyncSession = Depends(get_db)):
+    """按候选版本标记忽略，原人工知识保持原样。"""
+    return await collect_catalog.discard_candidate(db, item_id, payload.expected_version, identity.user.username)
 
 
 @router.get("/documents")
