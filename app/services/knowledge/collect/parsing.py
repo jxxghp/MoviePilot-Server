@@ -82,8 +82,21 @@ def html_document(result, source):
         nodes = selected.find_all(True)
         if len(nodes) > MAX_NODES:
             raise NetworkError("document_structure_large")
-        for node in selected.select("script,style,form,input,button,iframe,nav,footer,header,noscript,svg,img,video,audio"):
+        if source.connector == "nexusphp":
+            for node in selected.select("#nav_block,#info_block,#userinfo,#user_info,#userinfobar"):
+                node.decompose()
+        for node in selected.select("script,style,form,input,button,iframe,nav,footer,noscript,svg,img,video,audio"):
             node.decompose()
+        for node in selected.select("header"):
+            if node.find_parent(["article", "main"]) is None:
+                node.decompose()
+        if source.connector == "nexusphp":
+            # mainouter 是页面布局；只拆其直属行列，内部真正的规则数据表保留。
+            for table in selected.select("table.mainouter"):
+                for node in table.find_all(["thead", "tbody", "tfoot", "tr", "td", "th"]):
+                    if node.find_parent("table") is table:
+                        node.unwrap()
+                table.unwrap()
         for node in selected.find_all("a"):
             try:
                 node["href"] = public_url(urljoin(result.url, str(node.get("href", ""))), allow_fragment=True)

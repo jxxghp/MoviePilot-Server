@@ -454,6 +454,42 @@ def test_parser_preserves_gbk_structure_and_marks_content_instructions():
     assert "must-disappear" not in parsed["content"] and "content_instruction" in parsed["flags"]
 
 
+@pytest.mark.parametrize("selector", ["", ".mainouter"])
+@pytest.mark.parametrize("account_id", ["nav_block", "userinfo", "user_info", "userinfobar"])
+def test_nexus_rules_exclude_account_navigation_but_keep_article_headings(selector, account_id):
+    """经典表格布局内的账号栏不得进入规则，文章 header 中的章节标题仍须保留。"""
+    body = ('<title>合成站点规则</title><table class="mainouter"><tr><td>'
+            '<table id="' + account_id + '"><tr><td><table id="info_block"><tr><td>'
+            '<a href="userdetails.php?id=987654">synthetic-private-account</a>'
+            '<a href="logout.php">退出登录</a> 剩余流量 1234567'
+            '</td></tr></table></td></tr></table>'
+            '<article><header><h2>下载与做种规则</h2></header><p>' + TEXT + '</p></article>'
+            '<table><tr><th>做种小时</th><th>最低分享率</th></tr><tr><td>24</td><td>1.0</td></tr></table>'
+            '</td></tr></table>').encode()
+    result = network.FetchResult(200, "https://docs.example/rules", "text/html", body, charset="utf-8")
+    origin = type("Source", (), {"selector": selector, "connector": "nexusphp"})()
+    parsed = parsing.document(result, origin, "synthetic")
+    assert parsed["title"] == "下载与做种规则"
+    assert "## 下载与做种规则" in parsed["content"] and TEXT in parsed["content"]
+    assert "| 做种小时 | 最低分享率 |" in parsed["content"] and "| 24 | 1.0 |" in parsed["content"]
+    assert all(value not in parsed["content"] for value in (
+        "synthetic-private-account", "987654", "退出登录", "剩余流量", "1234567", "logout.php",
+    ))
+
+
+@pytest.mark.parametrize("connector", ["http", "nexusphp"])
+def test_article_header_is_content_while_page_header_is_navigation(connector):
+    """文章内标题保留语义，页面级 header 和已知账号容器仍被排除。"""
+    body = ('<main><header><h1>分享率说明</h1></header><article><header><h2>做种时间</h2>'
+            '</header><p>' + TEXT + '</p></article></main>'
+            '<header id="pageheader">synthetic-page-navigation</header>').encode()
+    result = network.FetchResult(200, "https://docs.example/rules", "text/html", body, charset="utf-8")
+    origin = type("Source", (), {"selector": "main,#pageheader", "connector": connector})()
+    parsed = parsing.document(result, origin, "synthetic")
+    assert "# 分享率说明" in parsed["content"] and "## 做种时间" in parsed["content"]
+    assert "synthetic-page-navigation" not in parsed["content"]
+
+
 def test_login_guide_is_not_confused_with_login_form_and_short_bearer_is_blocked():
     """真实登录配置文档可以提取；导航中的登录表单不能掩盖选定正文，短认证值也不反射。"""
     body = ('<title>登录配置 - MoviePilot</title><nav><form action="login"><input type="password"></form></nav>'
