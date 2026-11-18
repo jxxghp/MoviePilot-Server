@@ -2,6 +2,8 @@
 知识中心后台维护路由，复用现有会话、角色、CSRF 和审计。
 """
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
@@ -11,12 +13,15 @@ from app.admin.auth import AdminIdentity, administrator, super_administrator
 from app.admin.audit import record
 from app.core.config import settings
 from app.db.deps import get_db
-from app.models.knowledge import KnowledgeState
+from app.models.knowledge import KnowledgeImport, KnowledgeJob, KnowledgeState
 from app.schemas.knowledge import (
     ClientPayload, ClientUpdate, CollectionPayload, CollectionUpdate, CredentialRotation, DocumentPayload, RevisionCreate,
-    KnowledgePayload, PublicationAction, SitePayload, SiteUpdate, SourcePayload, SourceUpdate, VersionAction,
+    ImportApproval, ImportPreflight, KnowledgePayload, PublicationAction,
+    SitePayload, SiteUpdate, SourcePayload, SourceUpdate, VersionAction,
 )
 from app.services.knowledge import access, catalog, documents, jobs
+from app.services.knowledge import indexes
+from app.services.knowledge.imports import catalog as import_catalog, files as import_files
 
 
 async def no_store(response: Response) -> None:
@@ -282,3 +287,87 @@ async def cancel_job(item_id: str, payload: VersionAction, identity: AdminIdenti
     result = await jobs.cancel_job(db, item_id, payload.expected_version, identity.user.username)
     await catalog.commit(db)
     return result
+
+
+def import_directory():
+    """
+    延迟校验私有卷，未使用导入能力的既有后台不受配置缺失影响。
+    """
+    try:
+        return import_files.import_directory(indexes.private_directory(settings.KNOWLEDGE_DATA_DIR))
+    except (ValueError, OSError):
+        raise HTTPException(503, "中心知识私有存储尚未就绪") from None
+
+
+@router.post("/imports/upload", status_code=201)
+async def upload_import(request: Request, source_id: str = Query(pattern=r"^[a-f0-9]{32}$"),
+                        source_version: int = Query(ge=1), identity: AdminIdentity = Depends(administrator),
+                        db: AsyncSession = Depends(get_db)):
+    """
+    鉴权和 CSRF 检查后流式接收单个未压缩 JSONL，不接受文件系统路径。
+    """
+    return await import_catalog.upload(db, import_directory(), request, source_id, source_version, identity.user.username)
+
+
+@router.get("/imports")
+async def import_list(page: int = Query(1, ge=1), size: int = Query(30, ge=1, le=100),
+                      db: AsyncSession = Depends(get_db)):
+    """
+    分页查看批次与受控摘要，不返回候选正文或原文件。
+    """
+    return await import_catalog.list_batches(db, page, size)
+
+
+@router.get("/imports/{item_id}")
+async def read_import(item_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    展示批次和真实执行任务，已过期批次仍可查看状态元数据。
+    """
+    row = await catalog.get_row(db, KnowledgeImport, item_id)
+    job = await db.get(KnowledgeJob, row.current_job_id) if row.current_job_id else None
+    return {**import_catalog.batch_data(row), "job": jobs.job_data(job) if job else None,
+            "configuration": json.loads(row.mapping)}
+
+
+@router.post("/imports/{item_id}/preflight", status_code=202)
+async def preflight_import(item_id: str, payload: ImportPreflight, identity: AdminIdentity = Depends(administrator),
+                           db: AsyncSession = Depends(get_db)):
+    """
+    以明确字段、来源选择和适用范围排队预检，不执行导入或发布。
+    """
+    return await import_catalog.queue(db, import_directory(), item_id, payload, identity.user.username, phase="preflight")
+
+
+@router.get("/imports/{item_id}/rows")
+async def import_rows(item_id: str, page: int = Query(1, ge=1), size: int = Query(30, ge=1, le=100),
+                      db: AsyncSession = Depends(get_db)):
+    """
+    分页查看预检动作与警告，成功导入后改读无正文回执。
+    """
+    return await import_catalog.rows(db, import_directory(), item_id, page, size)
+
+
+@router.get("/imports/{item_id}/rows/{line}")
+async def import_row(item_id: str, line: int, db: AsyncSession = Depends(get_db)):
+    """
+    明确查看一行旧版与候选差异；秘密或其他阻止行不回显候选正文。
+    """
+    return await import_catalog.rows(db, import_directory(), item_id, 1, 1, line)
+
+
+@router.post("/imports/{item_id}/apply", status_code=202)
+async def apply_import(item_id: str, payload: ImportApproval, identity: AdminIdentity = Depends(administrator),
+                       db: AsyncSession = Depends(get_db)):
+    """
+    显式批准所审阅计划与逐行决定，仅排队生成待审草稿。
+    """
+    return await import_catalog.queue(db, import_directory(), item_id, payload, identity.user.username, phase="apply")
+
+
+@router.post("/imports/{item_id}/discard")
+async def discard_import(item_id: str, payload: VersionAction, identity: AdminIdentity = Depends(administrator),
+                         db: AsyncSession = Depends(get_db)):
+    """
+    丢弃非活动暂存；已提交的历史修订及行回执继续保留。
+    """
+    return await import_catalog.discard(db, import_directory(), item_id, payload.expected_version, identity.user.username)

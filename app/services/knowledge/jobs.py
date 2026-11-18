@@ -12,14 +12,16 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.audit import record
-from app.models.knowledge import KnowledgeJob, KnowledgeJobSlot, KnowledgeState, new_identity, timestamp
+from app.models.knowledge import (
+    KnowledgeImport, KnowledgeImportTask, KnowledgeJob, KnowledgeJobSlot, KnowledgeState, new_identity, timestamp,
+)
 
 JOB_FIELDS = ("id", "version", "kind", "source_id", "status", "attempts", "max_attempts", "available_at",
               "cancel_requested", "processed_documents", "processed_chunks", "outcome", "created_at",
               "updated_at", "started_at", "finished_at", "created_by")
 TERMINAL = {"succeeded", "failed", "cancelled"}
 LEASE_SECONDS = 60
-ERROR_CODES = {"index_failed", "storage_failed", "database_failed", "fts_unavailable", "timeout"}
+ERROR_CODES = {"index_failed", "import_failed", "storage_failed", "database_failed", "fts_unavailable", "timeout"}
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,7 @@ class JobLease:
     job_id: str
     token: str
     generation: int
+    kind: str = "index"
 
 
 async def lock_state(db: AsyncSession) -> KnowledgeState:
@@ -109,6 +112,7 @@ async def cancel_job(db: AsyncSession, job_id: str, expected_version: int, actor
         if row.status == "queued":
             row.status, row.outcome, row.finished_at = "cancelled", "cancelled", timestamp()
             await release_slot(db, job_id)
+            await settle_import(db, row)
         record(db, actor, "knowledge.job.cancel", job_id, {"status": row.status})
     await db.flush()
     return job_data(row)
@@ -116,28 +120,34 @@ async def cancel_job(db: AsyncSession, job_id: str, expected_version: int, actor
 
 async def claim(db: AsyncSession, *, now: float | None = None) -> JobLease | None:
     """
-    数据库串行认领已到期索引任务，失联租约受重试上限和随机所有权约束。
+    数据库串行认领受支持任务，失联租约受重试上限和随机所有权约束。
     """
     clock = time.time() if now is None else now
     state = await lock_state(db)
     candidates = (await db.scalars(select(KnowledgeJob).where(
-        KnowledgeJob.kind == "index",
+        KnowledgeJob.kind.in_(["index", "import"]),
         ((KnowledgeJob.status == "queued") & (KnowledgeJob.available_at <= clock)) |
         ((KnowledgeJob.status == "running") & (KnowledgeJob.lease_until <= clock)),
     ).order_by(KnowledgeJob.available_at, KnowledgeJob.id).limit(20).with_for_update())).all()
+    running_import = await db.scalar(select(KnowledgeJob.id).where(
+        KnowledgeJob.kind == "import", KnowledgeJob.status == "running", KnowledgeJob.lease_until > clock,
+    ).limit(1))
     for row in candidates:
+        if row.kind == "import" and running_import:
+            continue
         if row.cancel_requested or row.attempts >= row.max_attempts:
             row.status = "cancelled" if row.cancel_requested else "failed"
             row.outcome = "cancelled" if row.cancel_requested else "lease_expired"
             row.finished_at, row.updated_at = timestamp(), timestamp()
             row.lease_token, row.lease_until, row.version = "", None, row.version + 1
             await release_slot(db, row.id)
+            await settle_import(db, row)
             continue
         row.status, row.lease_token, row.lease_until = "running", new_identity(), clock + LEASE_SECONDS
         row.attempts, row.version = row.attempts + 1, row.version + 1
         row.started_at, row.updated_at, row.outcome = timestamp(), timestamp(), ""
         await db.flush()
-        return JobLease(row.id, row.lease_token, state.generation)
+        return JobLease(row.id, row.lease_token, state.generation, row.kind)
     await db.flush()
     return None
 
@@ -211,6 +221,7 @@ async def fail_job(db: AsyncSession, lease: JobLease, error_code: str) -> str:
     if row.status in TERMINAL:
         row.finished_at = timestamp()
         await release_slot(db, row.id)
+        await settle_import(db, row)
     else:
         row.available_at = time.time() + min(15 * 2 ** (row.attempts - 1), 120)
     row.lease_token, row.lease_until = "", None
@@ -218,3 +229,38 @@ async def fail_job(db: AsyncSession, lease: JobLease, error_code: str) -> str:
     record(db, "knowledge-worker", "knowledge.job." + row.status, row.id, {"code": row.outcome})
     await db.flush()
     return row.status
+
+
+async def settle_import(db: AsyncSession, job: KnowledgeJob) -> None:
+    """
+    取消或终态失败同步对应批次，但旧任务不能改变后来任务绑定的批次。
+    """
+    if job.kind != "import":
+        return
+    task = await db.get(KnowledgeImportTask, job.id)
+    batch = await db.get(KnowledgeImport, task.import_id) if task else None
+    if batch and batch.current_job_id == job.id and job.status in {"cancelled", "failed"}:
+        batch.status, batch.error_code = job.status, job.outcome
+        batch.version, batch.updated_at = batch.version + 1, timestamp()
+
+
+async def finish_import(db: AsyncSession, lease: JobLease, batch: KnowledgeImport, *, status: str,
+                        outcome: str, documents: int = 0, failed: bool = False) -> str:
+    """
+    在导入事务内完成批次、回执与任务，拒绝失效或被取消的所有权。
+    """
+    await lock_state(db)
+    row = await owned_job(db, lease)
+    if row is None or batch.current_job_id != lease.job_id:
+        return "lease_lost"
+    if row.cancel_requested:
+        status, outcome = "cancelled", "cancelled"
+    batch.status, batch.version, batch.updated_at = status, batch.version + 1, timestamp()
+    row.status = "cancelled" if status == "cancelled" else ("failed" if failed else "succeeded")
+    row.outcome, row.processed_documents = outcome, documents
+    row.finished_at, row.updated_at, row.version = timestamp(), timestamp(), row.version + 1
+    row.lease_token, row.lease_until = "", None
+    await release_slot(db, row.id)
+    record(db, "knowledge-worker", "knowledge.import." + outcome, batch.id, {"documents": documents})
+    await db.flush()
+    return outcome

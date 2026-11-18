@@ -246,3 +246,68 @@ class KnowledgeJobSlot(Base):
 
     key = Column(String(64), primary_key=True, comment="内部计算的去重键")
     job_id = Column(String(32), ForeignKey("KNOWLEDGE_JOB.id"), nullable=False, unique=True, comment="当前活动任务")
+
+
+class KnowledgeImport(KnowledgeRecord, Base):
+    """
+    私有 JSONL 批次的受控状态与计划摘要；正文不进入管理投影或审计。
+    """
+
+    __tablename__ = "KNOWLEDGE_IMPORT"
+    __table_args__ = (
+        CheckConstraint("status IN ('uploading','uploaded','upload_failed','preflight_queued','ready','blocked',"
+                        "'apply_queued','imported','cancelled','failed','discarded','expired')",
+                        name="ck_knowledge_import_status"),
+        CheckConstraint("size_bytes >= 0 AND version > 0", name="ck_knowledge_import_version"),
+        Index("ix_knowledge_import_expiry", "status", "expires_at"),
+    )
+
+    source_id = Column(String(32), ForeignKey("KNOWLEDGE_SOURCE.id"), nullable=False, comment="固定 JSONL 来源")
+    source_version = Column(Integer, nullable=False, comment="明确核对的来源版本")
+    status = Column(String(24), nullable=False, default="uploading", comment="上传、预检、确认和导入的真实状态")
+    file_hash = Column(String(64), nullable=False, default="", comment="原始上传字节 SHA-256")
+    files_cleared = Column(Boolean, nullable=False, default=False, comment="暂存已清理，避免反复扫描历史批次")
+    size_bytes = Column(Integer, nullable=False, default=0, comment="实际接收字节数")
+    mapping = Column(Text, nullable=False, default="{}", comment="不执行代码的字段映射及明确适用范围")
+    plan_id = Column(String(32), nullable=False, default="", comment="中心生成的不可变计划身份")
+    plan_hash = Column(String(64), nullable=False, default="", comment="所审阅计划完整性摘要")
+    summary = Column(Text, nullable=False, default="{}", comment="预检计数与固定警告码")
+    confirmation = Column(Text, nullable=False, default="{}", comment="明确跳过、追加及警告确认，不含正文")
+    result = Column(Text, nullable=False, default="{}", comment="实际写入和跳过计数")
+    error_code = Column(String(32), nullable=False, default="", comment="不含原文的固定错误码")
+    current_job_id = Column(String(32), ForeignKey("KNOWLEDGE_JOB.id"), nullable=True, comment="本次预检或导入任务")
+    expires_at = Column(Float, nullable=False, comment="私有暂存截止 UTC Unix 时间")
+    created_by = Column(String(64), nullable=False, comment="上传管理员")
+
+
+class KnowledgeImportTask(Base):
+    """
+    固定任务到批次和阶段的绑定，不让工作进程执行客户端提交的函数或路径。
+    """
+
+    __tablename__ = "KNOWLEDGE_IMPORT_TASK"
+    __table_args__ = (CheckConstraint("phase IN ('preflight','apply')", name="ck_knowledge_import_phase"),)
+
+    job_id = Column(String(32), ForeignKey("KNOWLEDGE_JOB.id"), primary_key=True)
+    import_id = Column(String(32), ForeignKey("KNOWLEDGE_IMPORT.id"), nullable=False, index=True)
+    phase = Column(String(16), nullable=False)
+
+
+class KnowledgeImportReceipt(Base):
+    """
+    和实际修订一起提交的无正文行回执，清理原文件后仍可定位导入结果与历史差异。
+    """
+
+    __tablename__ = "KNOWLEDGE_IMPORT_RECEIPT"
+    __table_args__ = (
+        CheckConstraint("line > 0 AND outcome IN ('new','updated','unchanged','skipped')",
+                        name="ck_knowledge_import_receipt"),
+    )
+
+    import_id = Column(String(32), ForeignKey("KNOWLEDGE_IMPORT.id"), primary_key=True)
+    line = Column(Integer, primary_key=True)
+    document_id = Column(String(32), ForeignKey("KNOWLEDGE_DOCUMENT.id"), nullable=True)
+    revision_number = Column(Integer, nullable=True)
+    base_revision = Column(Integer, nullable=True)
+    outcome = Column(String(16), nullable=False)
+    flags = Column(Text, nullable=False, default="[]", comment="固定警告码，不保存被阻止的正文")

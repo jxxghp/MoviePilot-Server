@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 import test_knowledge_access as access_tests
 import test_knowledge_index as index_tests
 import test_knowledge_jobs as job_tests
+import test_knowledge_import as import_tests
 
 DATABASE_URL = os.environ.get("KNOWLEDGE_TEST_DATABASE_URL", "")
 
@@ -31,6 +32,12 @@ DATABASE_URL = os.environ.get("KNOWLEDGE_TEST_DATABASE_URL", "")
     pytest.param(job_tests.test_two_real_connections_claim_one_lease_and_old_owner_is_fenced, {}, id="lease-race"),
     pytest.param(job_tests.test_new_request_while_cancel_pending_gets_own_slot, {}, id="cancel-slot"),
     pytest.param(access_tests.test_concurrent_rotation_has_one_winner_and_no_lost_grants, {}, id="credential-race"),
+    pytest.param(import_tests.test_upload_preflight_apply_receipts_and_no_auto_publication, {}, id="import-flow"),
+    pytest.param(import_tests.test_manual_revision_protection_survives_unchanged_import, {}, id="import-manual"),
+    pytest.param(import_tests.test_stale_plan_cannot_overwrite_new_document_and_requires_reinspection, {}, id="import-stale"),
+    pytest.param(import_tests.test_partial_sql_write_rolls_back_and_retry_is_exactly_once, {}, id="import-rollback"),
+    pytest.param(import_tests.test_two_connections_queue_one_preflight_version, {}, id="import-race"),
+    pytest.param(import_tests.test_import_commit_lost_ack_does_not_duplicate_and_cleanup_recovers, {}, id="import-lost-ack"),
 ])
 def test_postgresql_knowledge_contract(monkeypatch, tmp_path, case, options):
     """

@@ -19,9 +19,9 @@ def normalized_name(value: str) -> str:
     return "".join(unicodedata.normalize("NFKC", value).casefold().split())
 
 
-def public_url(value: str) -> str:
+def public_url(value: str, *, allow_fragment: bool = False) -> str:
     """
-    校验不含秘密的公开 HTTPS 定位地址；实际采集仍须校验 DNS 与重定向。
+    校验不含秘密的 HTTPS 地址；仅出处可保留章节片段，采集定位仍禁止片段。
     """
     if not value:
         return ""
@@ -33,7 +33,8 @@ def public_url(value: str) -> str:
         port = parsed.port
     except (UnicodeError, ValueError) as error:
         raise ValueError("来源地址格式无效") from error
-    if parsed.scheme != "https" or not host or parsed.username is not None or parsed.password is not None or parsed.fragment:
+    if (parsed.scheme != "https" or not host or parsed.username is not None or parsed.password is not None
+            or (parsed.fragment and not allow_fragment)):
         raise ValueError("来源地址必须为不含凭据和片段的 HTTPS 地址")
     if port not in (None, 443):
         raise ValueError("来源地址只允许标准 HTTPS 端口")
@@ -47,9 +48,12 @@ def public_url(value: str) -> str:
         raise ValueError("来源地址不能指向非公开网络")
     sensitive = {"cookie", "passkey", "token", "access_token", "auth", "authkey", "api_key", "api-key", "apikey",
                  "key", "password", "passwd", "pwd", "authorization", "secret", "secretkey", "csrf_token"}
-    if any(normalized_name(key) in sensitive for key, _ in parse_qsl(parsed.query, keep_blank_values=True)):
+    parameters = [parsed.query]
+    if allow_fragment and parsed.fragment:
+        parameters.append(parsed.fragment.rsplit("?", 1)[-1])
+    if any(normalized_name(key) in sensitive for part in parameters for key, _ in parse_qsl(part, keep_blank_values=True)):
         raise ValueError("来源地址不能包含认证参数")
-    return urlunsplit(("https", host, parsed.path or "/", parsed.query, ""))
+    return urlunsplit(("https", host, parsed.path or "/", parsed.query, parsed.fragment if allow_fragment else ""))
 
 
 def stable_version(value: str | None) -> str | None:
@@ -309,7 +313,7 @@ class RevisionPayload(KnowledgePayload):
         """
         出处不能携带可回显的认证参数。
         """
-        return public_url(value)
+        return public_url(value, allow_fragment=True)
 
     @field_validator("min_version", "max_version")
     @classmethod
@@ -361,3 +365,65 @@ class RevisionCreate(RevisionPayload):
     """
 
     expected_version: int = Field(ge=1, description="读取文档时的并发版本")
+
+
+class ImportPreflight(VersionAction):
+    """
+    对已上传文件明确配置顶层字段、来源筛选与适用范围，不推断外部身份的权限。
+    """
+
+    expected_source_version: int = Field(ge=1)
+    identity_fields: list[Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")]] = Field(
+        default_factory=lambda: ["external_id"], min_length=1, max_length=4,
+    )
+    title_field: str = Field(default="title", pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+    content_field: str = Field(default="content", pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+    url_field: str | None = Field(default="source_url", pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+    origin_field: str | None = Field(default=None, pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+    origin_values: list[Annotated[str, Field(min_length=1, max_length=512)]] = Field(default_factory=list, max_length=1000)
+    metadata_mode: Literal["fixed", "record"] = "fixed"
+    metadata: dict = Field(description="必须明确 version_scope，其他值按标准修订元数据校验")
+
+    @field_validator("metadata")
+    @classmethod
+    def explicit_metadata(cls, values: dict) -> dict:
+        """
+        复用现有范围与时间校验，拒绝把秘密、正文或来源 URL 塞入批次元数据。
+        """
+        allowed = {"product", "version_scope", "min_version", "max_version", "source_commit", "fetched_at", "valid_until"}
+        if "version_scope" not in values or set(values) - allowed:
+            raise ValueError("导入必须明确版本适用范围，且只接受标准元数据")
+        scope = RevisionPayload(title="scope", content="scope", **values)
+        return scope.model_dump(mode="json", include=allowed)
+
+    @model_validator(mode="after")
+    def explicit_origins(self):
+        """
+        外部来源选择不能隐式匹配所有分组，身份字段也不能重复。
+        """
+        if bool(self.origin_field) != bool(self.origin_values):
+            raise ValueError("外部来源字段必须配合明确的允许值")
+        if len(set(self.identity_fields)) != len(self.identity_fields):
+            raise ValueError("身份字段不能重复")
+        self.origin_values = sorted(set(self.origin_values))
+        return self
+
+
+class ImportApproval(VersionAction):
+    """
+    确认所审阅计划的警告和逐行处理，阻止行只能跳过，人工改动不默认覆盖。
+    """
+
+    acknowledge_warnings: bool = False
+    skip_lines: list[Annotated[int, Field(ge=1)]] = Field(default_factory=list, max_length=1000)
+    append_lines: list[Annotated[int, Field(ge=1)]] = Field(default_factory=list, max_length=1000)
+
+    @model_validator(mode="after")
+    def disjoint_decisions(self):
+        """
+        每行只有一个明确决定，不把重复或冲突决定静默去重。
+        """
+        if (len(set(self.skip_lines)) != len(self.skip_lines) or len(set(self.append_lines)) != len(self.append_lines)
+                or set(self.skip_lines) & set(self.append_lines)):
+            raise ValueError("行级决定不能重复或冲突")
+        return self

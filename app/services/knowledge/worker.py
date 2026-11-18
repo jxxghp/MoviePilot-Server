@@ -1,5 +1,5 @@
 """
-独立知识索引执行器；不从 Web 生命周期启动，不输出知识或原文异常。
+独立知识索引和导入执行器；不从 Web 生命周期启动，不输出知识或原文异常。
 """
 
 import argparse
@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.services.knowledge import indexes, jobs
+from app.services.knowledge.imports import catalog as import_catalog, files as import_files, worker as import_worker
 
 logger = logging.getLogger(__name__)
 BUILD_TIMEOUT_SECONDS = 600
@@ -46,18 +47,20 @@ class KnowledgeWorker:
                 stopped.set()
                 return
 
-    async def build(self, lease: jobs.JobLease) -> indexes.SnapshotBuilder:
+    async def build(self, lease: jobs.JobLease) -> indexes.SnapshotBuilder | dict:
         """
         同时监视构建和租约，及时停止已被取消或失去所有权的构建。
         """
         stopped = asyncio.Event()
         renewal = asyncio.create_task(self.renew(lease, stopped))
         lost = asyncio.create_task(stopped.wait())
-        building = asyncio.create_task(indexes.build_snapshot(self.sessions, self.directory, lease.generation))
+        operation = (indexes.build_snapshot(self.sessions, self.directory, lease.generation) if lease.kind == "index"
+                     else import_worker.execute(self.sessions, import_files.import_directory(self.directory), lease))
+        building = asyncio.create_task(operation)
         retained = False
         try:
             done, _pending = await asyncio.wait((building, lost), return_when=asyncio.FIRST_COMPLETED)
-            if lost in done:
+            if lost in done and building not in done:
                 raise RuntimeError("lease_lost")
             result = await building
             retained = True
@@ -68,7 +71,9 @@ class KnowledgeWorker:
                     task.cancel()
             await asyncio.gather(renewal, lost, building, return_exceptions=True)
             if not retained and not building.cancelled() and building.exception() is None:
-                building.result().destination.unlink(missing_ok=True)
+                result = building.result()
+                if isinstance(result, indexes.SnapshotBuilder):
+                    result.destination.unlink(missing_ok=True)
 
     async def run_once(self) -> dict | None:
         """
@@ -76,6 +81,8 @@ class KnowledgeWorker:
         """
         if not settings.KNOWLEDGE_ENABLED:
             return None
+        async with self.sessions() as db:
+            await import_catalog.cleanup(db, import_files.import_directory(self.directory))
         async with self.sessions() as db:
             lease = await jobs.claim(db)
             await db.commit()
@@ -86,6 +93,12 @@ class KnowledgeWorker:
         try:
             async with asyncio.timeout(BUILD_TIMEOUT_SECONDS):
                 builder = await self.build(lease)
+            if lease.kind == "import":
+                if builder["outcome"] in {"imported", "imported_with_skips"}:
+                    with contextlib.suppress(OSError, SQLAlchemyError):
+                        async with self.sessions() as db:
+                            await import_catalog.cleanup(db, import_files.import_directory(self.directory))
+                return builder
             async with self.sessions() as db:
                 activation_attempted = True
                 outcome = await jobs.finish_index(db, lease, builder.snapshot, builder.documents, builder.chunk_count)
@@ -94,18 +107,19 @@ class KnowledgeWorker:
                 builder.destination.unlink(missing_ok=True)
             return {"job_id": lease.job_id, "outcome": outcome}
         except asyncio.CancelledError:
-            if builder is not None and not activation_attempted:
+            if isinstance(builder, indexes.SnapshotBuilder) and not activation_attempted:
                 builder.destination.unlink(missing_ok=True)
             # 进程强停保留租约，恢复者只能在租约到期后重新认领。
             raise
         except Exception as error:
-            if builder is not None and not activation_attempted:
+            if isinstance(builder, indexes.SnapshotBuilder) and not activation_attempted:
                 builder.destination.unlink(missing_ok=True)
             # 激活提交失去回执时可能已成功，保留完整文件，不能删掉 SQL 已指向的快照。
             code = ("timeout" if isinstance(error, TimeoutError) else
                     "fts_unavailable" if isinstance(error, indexes.FtsUnavailable) else
                     "database_failed" if isinstance(error, SQLAlchemyError) else
-                    "storage_failed" if isinstance(error, OSError) else "index_failed")
+                    "storage_failed" if isinstance(error, OSError) else
+                    "import_failed" if lease.kind == "import" else "index_failed")
             async with self.sessions() as db:
                 outcome = await jobs.fail_job(db, lease, code)
                 await db.commit()
