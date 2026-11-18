@@ -7,7 +7,9 @@ import os
 import re
 import sqlite3
 import unicodedata
+from datetime import datetime
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 from sqlalchemy import or_, select
 
@@ -15,9 +17,31 @@ from app.models.knowledge import (
     KnowledgeCollection, KnowledgeDocument, KnowledgeRevision, KnowledgeSite, KnowledgeSource, new_identity, timestamp,
 )
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 CHUNK_SIZE = 1800
 CHUNK_OVERLAP = 180
+
+
+def version_key(value: str | None) -> int | None:
+    """
+    将已规范的稳定版本编码为整数，避免 3.10 与 3.2 的字符串比较错误。
+    """
+    if value is None:
+        return None
+    major, minor, patch = map(int, value.split("."))
+    return major * 100000000 + minor * 10000 + patch
+
+
+def content_kind(external_id: str, source_url: str) -> str:
+    """
+    由明确路径区分指南、实现和测试，不让测试样例自动变成用户规则。
+    """
+    path = unquote(urlsplit(source_url).path + "/" + external_id).casefold()
+    if re.search(r"(?:^|/)(?:tests?|__tests__)(?:/|$)|(?:^|/)test_[^/]+\.(?:py|rs|ts|js)(?:$|/)", path):
+        return "test"
+    if re.search(r"\.(?:py|rs|ts|js|vue|go|java)(?:$|/)", path):
+        return "reference"
+    return "guide"
 
 
 class FtsUnavailable(RuntimeError):
@@ -114,7 +138,9 @@ class SnapshotBuilder:
                     id INTEGER PRIMARY KEY, document_id TEXT NOT NULL, revision_number INTEGER NOT NULL,
                     chunk_number INTEGER NOT NULL, collection_id TEXT NOT NULL, source_id TEXT NOT NULL,
                     site_id TEXT, title TEXT NOT NULL, start_offset INTEGER NOT NULL, end_offset INTEGER NOT NULL,
-                    content TEXT NOT NULL, UNIQUE(document_id, revision_number, chunk_number)
+                    content TEXT NOT NULL, kind TEXT NOT NULL, product TEXT NOT NULL, version_scope TEXT NOT NULL,
+                    min_key INTEGER, max_key INTEGER, valid_until REAL,
+                    UNIQUE(document_id, revision_number, chunk_number)
                 );
             """)
             try:
@@ -141,9 +167,12 @@ class SnapshotBuilder:
         for number, (start, end, content) in enumerate(chunks(row.content)):
             result = self.connection.execute(
                 "INSERT INTO chunks (document_id, revision_number, chunk_number, collection_id, source_id, site_id, "
-                "title, start_offset, end_offset, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "title, start_offset, end_offset, content, kind, product, version_scope, min_key, max_key, valid_until) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (row.document_id, row.revision_number, number, row.collection_id, row.source_id, row.site_id,
-                 row.title, start, end, content),
+                 row.title, start, end, content, content_kind(row.external_id, row.source_url), row.product,
+                 row.version_scope, version_key(row.min_version), version_key(row.max_version),
+                 datetime.fromisoformat(row.valid_until).timestamp() if row.valid_until else None),
             )
             self.connection.execute("INSERT INTO search(rowid, title, body) VALUES (?, ?, ?)",
                                     (result.lastrowid, tokens(row.title), tokens(content)))
@@ -196,6 +225,9 @@ async def build_snapshot(sessions, directory: Path, generation: int) -> Snapshot
                     KnowledgeDocument.id.label("document_id"), KnowledgeRevision.number.label("revision_number"),
                     KnowledgeSource.collection_id, KnowledgeSource.id.label("source_id"), KnowledgeSource.site_id,
                     KnowledgeRevision.title, KnowledgeRevision.content,
+                    KnowledgeDocument.external_id, KnowledgeRevision.source_url, KnowledgeRevision.product,
+                    KnowledgeRevision.version_scope, KnowledgeRevision.min_version, KnowledgeRevision.max_version,
+                    KnowledgeRevision.valid_until,
                 ).join(KnowledgeRevision, (KnowledgeRevision.document_id == KnowledgeDocument.id) &
                        (KnowledgeRevision.number == KnowledgeDocument.published_revision))
                     .join(KnowledgeSource, KnowledgeSource.id == KnowledgeDocument.source_id)

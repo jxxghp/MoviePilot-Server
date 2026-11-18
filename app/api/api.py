@@ -4,6 +4,7 @@ API路由汇总
 from fastapi import APIRouter
 
 from app.api import (
+    knowledge,
     mapping,
     media_recognize_share,
     plugin_rating,
@@ -18,6 +19,7 @@ from app.api import (
 )
 
 api_router = APIRouter()
+api_router.include_router(knowledge.router)
 api_router.include_router(mapping.router, prefix="/recognize", tags=["media-mapping"])
 api_router.include_router(push.router, prefix="/push", tags=["push"])
 

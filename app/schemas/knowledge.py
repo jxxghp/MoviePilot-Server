@@ -427,3 +427,35 @@ class ImportApproval(VersionAction):
                 or set(self.skip_lines) & set(self.append_lines)):
             raise ValueError("行级决定不能重复或冲突")
         return self
+
+
+class KnowledgeSearch(KnowledgePayload):
+    """
+    检索只接收短查询与明确范围；宿主提供产品版本，不接受任意端点或正文预算。
+    """
+
+    protocol_version: Literal[1]
+    query: str = Field(min_length=1, max_length=300)
+    product: str = Field(pattern=r"^[a-z][a-z0-9-]{0,63}$")
+    product_version: str | None = Field(default=None, max_length=32)
+    domain: Literal["mp", "pt"] | None = None
+    site: str | None = Field(default=None, min_length=1, max_length=253)
+    purpose: Literal["usage", "troubleshooting", "development"] = "usage"
+    limit: int = Field(default=5, ge=1, le=5)
+
+    @field_validator("product_version")
+    @classmethod
+    def explicit_product_version(cls, value: str | None) -> str | None:
+        """
+        不将分支名、开发版或未知版本猜成稳定版本；宿主未知时应传 null。
+        """
+        return stable_version(value)
+
+
+class KnowledgeRead(KnowledgePayload):
+    """
+    补读仅接受搜索签发的短期引用，不能直接提交文档、路径或任意偏移。
+    """
+
+    protocol_version: Literal[1]
+    evidence_id: str = Field(pattern=r"^ke_[A-Za-z0-9_-]{43}$")

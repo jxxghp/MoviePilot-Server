@@ -14,6 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.config import settings
 from app.services.knowledge import indexes, jobs
 from app.services.knowledge.imports import catalog as import_catalog, files as import_files, worker as import_worker
+from app.services.knowledge.retrieval import storage as retrieval_storage
 
 logger = logging.getLogger(__name__)
 BUILD_TIMEOUT_SECONDS = 600
@@ -83,6 +84,8 @@ class KnowledgeWorker:
             return None
         async with self.sessions() as db:
             await import_catalog.cleanup(db, import_files.import_directory(self.directory))
+        async with self.sessions() as db:
+            await retrieval_storage.collect(db, self.directory)
         async with self.sessions() as db:
             lease = await jobs.claim(db)
             await db.commit()

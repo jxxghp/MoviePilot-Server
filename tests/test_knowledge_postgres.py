@@ -16,6 +16,7 @@ import test_knowledge_access as access_tests
 import test_knowledge_index as index_tests
 import test_knowledge_jobs as job_tests
 import test_knowledge_import as import_tests
+import test_knowledge_retrieval as retrieval_tests
 
 DATABASE_URL = os.environ.get("KNOWLEDGE_TEST_DATABASE_URL", "")
 
@@ -38,6 +39,14 @@ DATABASE_URL = os.environ.get("KNOWLEDGE_TEST_DATABASE_URL", "")
     pytest.param(import_tests.test_partial_sql_write_rolls_back_and_retry_is_exactly_once, {}, id="import-rollback"),
     pytest.param(import_tests.test_two_connections_queue_one_preflight_version, {}, id="import-race"),
     pytest.param(import_tests.test_import_commit_lost_ack_does_not_duplicate_and_cleanup_recovers, {}, id="import-lost-ack"),
+    pytest.param(retrieval_tests.test_search_read_bounded_evidence_and_metadata_only_references, {}, id="knowledge-read"),
+    pytest.param(retrieval_tests.test_product_version_site_and_content_kind_are_filtered, {}, id="knowledge-scope"),
+    pytest.param(retrieval_tests.test_stale_snapshot_and_reference_cannot_restore_revoked_content,
+                 {"change": "withdraw"}, id="knowledge-withdraw"),
+    pytest.param(retrieval_tests.test_stale_snapshot_and_reference_cannot_restore_revoked_content,
+                 {"change": "grant"}, id="knowledge-revoke"),
+    pytest.param(retrieval_tests.test_snapshot_retirement_preserves_active_uncertain_and_short_references,
+                 {}, id="knowledge-retirement"),
 ])
 def test_postgresql_knowledge_contract(monkeypatch, tmp_path, case, options):
     """

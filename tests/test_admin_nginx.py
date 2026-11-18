@@ -37,7 +37,7 @@ class EchoBackend(BaseHTTPRequestHandler):
         """测试中不输出每个代理请求的访问日志。"""
 
 
-@pytest.mark.parametrize("prefix", ["admin", "push", "recognize/mapping"])
+@pytest.mark.parametrize("prefix", ["admin", "push", "knowledge", "recognize/mapping"])
 def test_real_nginx_preserves_private_routes(tmp_path, prefix):
     """使用仓库原样 location，实测私有路径、静态资源、认证头和错误防缓存。"""
     nginx = shutil.which("nginx")
@@ -103,8 +103,15 @@ def test_real_nginx_preserves_private_routes(tmp_path, prefix):
             assert response.read().decode() == path
             assert response.getheader("Cache-Control") == "no-store"
             assert response.getheader("X-Echo-Authorization") == "Bearer test-private-credential"
-            if prefix == "push":
+            if prefix in {"push", "knowledge"}:
                 assert response.getheader("X-Echo-Forwarded-For") == "127.0.0.1"
+            connection.close()
+        if prefix == "knowledge":
+            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+            connection.request("POST", "/knowledge/v1/search", body=b"x" * 8193)
+            response = connection.getresponse()
+            assert response.status == 413 and response.getheader("Cache-Control") == "no-store"
+            response.read()
             connection.close()
         if prefix == "recognize/mapping":
             return
