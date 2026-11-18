@@ -17,6 +17,7 @@ import test_knowledge_index as index_tests
 import test_knowledge_jobs as job_tests
 import test_knowledge_import as import_tests
 import test_knowledge_retrieval as retrieval_tests
+import test_knowledge_credentials as credential_tests
 
 DATABASE_URL = os.environ.get("KNOWLEDGE_TEST_DATABASE_URL", "")
 
@@ -47,6 +48,9 @@ DATABASE_URL = os.environ.get("KNOWLEDGE_TEST_DATABASE_URL", "")
                  {"change": "grant"}, id="knowledge-revoke"),
     pytest.param(retrieval_tests.test_snapshot_retirement_preserves_active_uncertain_and_short_references,
                  {}, id="knowledge-retirement"),
+    pytest.param(credential_tests.test_roles_csrf_ciphertext_and_metadata_never_return_secret, {}, id="source-secrets"),
+    pytest.param(credential_tests.test_rewrap_uses_new_nonce_and_active_key_and_rejects_tampering, {}, id="source-key-rotation"),
+    pytest.param(credential_tests.test_two_real_connections_cannot_overwrite_credential_or_target, {}, id="source-secret-race"),
 ])
 def test_postgresql_knowledge_contract(monkeypatch, tmp_path, case, options):
     """

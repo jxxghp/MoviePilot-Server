@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     KNOWLEDGE_ENABLED: bool = False
     # 必须指向仓库和镜像上下文之外的专用私有数据卷。
     KNOWLEDGE_DATA_DIR: str = ""
+    # 仓库外、仅属主可读的命名密钥环文件；空值不允许保存或解密采集凭据。
+    KNOWLEDGE_KEY_FILE: str = ""
 
     # 兼容手工接入：每个 MoviePilot 实例使用独立随机密钥，逗号分隔；为空不影响自动接入。
     PUSH_RELAY_KEYS: str = ""

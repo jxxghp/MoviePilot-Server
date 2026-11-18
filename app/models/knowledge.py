@@ -1,7 +1,7 @@
 """
 中心知识的集合、站点、来源、文档修订与独立访问授权。
 
-本阶段只保存受控管理数据，不向公共接口发布正文或启动采集。
+正文与采集秘密均属于中心私有运行期数据，不进入发行包。
 """
 
 from datetime import datetime, timezone
@@ -111,6 +111,25 @@ class KnowledgeSource(KnowledgeRecord, Base):
     selector = Column(String(200), nullable=False, default="", comment="正文选择器，不执行脚本")
     refresh_minutes = Column(Integer, nullable=False, default=0, comment="刷新间隔分钟，零表示仅手动")
     enabled = Column(Boolean, nullable=False, default=False, comment="是否允许后续采集")
+
+
+class KnowledgeCredential(KnowledgeRecord, Base):
+    """
+    来源独占的认证密文；类型、目标和并发版本参与认证附加数据，不保存明文。
+    """
+
+    __tablename__ = "KNOWLEDGE_CREDENTIAL"
+    __table_args__ = (
+        CheckConstraint("kind IN ('cookie', 'bearer') AND version > 0", name="ck_knowledge_credential_kind"),
+    )
+
+    source_id = Column(String(32), ForeignKey("KNOWLEDGE_SOURCE.id"), nullable=False, unique=True)
+    kind = Column(String(16), nullable=False, comment="Cookie 或 Bearer 请求头")
+    host = Column(String(253), nullable=False, comment="批准的精确 HTTPS 主机")
+    binding = Column(String(64), nullable=False, comment="来源定位及读取范围摘要")
+    key_id = Column(String(32), nullable=False, comment="部署密钥环中的密钥标识")
+    nonce = Column(String(32), nullable=False, comment="每次加密随机 nonce 的编码")
+    ciphertext = Column(Text, nullable=False, comment="带认证标签的密文")
 
 
 class KnowledgeDocument(KnowledgeRecord, Base):

@@ -17,11 +17,12 @@ from app.models.knowledge import KnowledgeImport, KnowledgeJob, KnowledgeState
 from app.schemas.knowledge import (
     ClientPayload, ClientUpdate, CollectionPayload, CollectionUpdate, CredentialRotation, DocumentPayload, RevisionCreate,
     ImportApproval, ImportPreflight, KnowledgePayload, PublicationAction,
-    SitePayload, SiteUpdate, SourcePayload, SourceUpdate, VersionAction,
+    SitePayload, SiteUpdate, SourcePayload, SourceUpdate, SourceCredentialAction, SourceCredentialPayload, VersionAction,
 )
 from app.services.knowledge import access, catalog, documents, jobs
 from app.services.knowledge import indexes
 from app.services.knowledge.imports import catalog as import_catalog, files as import_files
+from app.services.knowledge.credentials import catalog as credential_catalog
 
 
 async def no_store(response: Response) -> None:
@@ -48,9 +49,9 @@ class KnowledgeRoute(APIRoute):
             """
             try:
                 return await handler(request)
-            except RequestValidationError as error:
+            except RequestValidationError:
                 raise HTTPException(422, "知识表单字段无效，请检查来源地址、版本和必填项",
-                                    headers={"Cache-Control": "no-store"}) from error
+                                    headers={"Cache-Control": "no-store"}) from None
             except HTTPException as error:
                 error.headers = {**(error.headers or {}), "Cache-Control": "no-store"}
                 raise
@@ -155,6 +156,36 @@ async def update_source(item_id: str, payload: SourceUpdate, identity: AdminIden
     更新来源白名单字段，防止改变已有文档的集合归属。
     """
     return await catalog.update_source(db, item_id, payload, identity.user.username)
+
+
+@router.get("/sources/{item_id}/credential")
+async def source_credential(item_id: str, db: AsyncSession = Depends(get_db)):
+    """查看来源的凭据配置状态，任何角色都不会取得秘密或密文。"""
+    return await credential_catalog.read(db, item_id)
+
+
+@router.put("/sources/{item_id}/credential")
+async def replace_source_credential(item_id: str, payload: SourceCredentialPayload,
+                                    identity: AdminIdentity = Depends(super_administrator),
+                                    db: AsyncSession = Depends(get_db)):
+    """只有超级管理员可明确替换绑定范围内的认证值。"""
+    return await credential_catalog.save(db, item_id, payload, identity.user.username)
+
+
+@router.post("/sources/{item_id}/credential/clear")
+async def clear_source_credential(item_id: str, payload: SourceCredentialAction,
+                                  identity: AdminIdentity = Depends(super_administrator),
+                                  db: AsyncSession = Depends(get_db)):
+    """明确删除认证密文并使旧来源版本失效，保留不含秘密的审计。"""
+    return await credential_catalog.clear(db, item_id, payload, identity.user.username)
+
+
+@router.post("/sources/{item_id}/credential/rewrap")
+async def rewrap_source_credential(item_id: str, payload: SourceCredentialAction,
+                                   identity: AdminIdentity = Depends(super_administrator),
+                                   db: AsyncSession = Depends(get_db)):
+    """使用部署 active 密钥重新包封认证值，无须向后台浏览器返回明文。"""
+    return await credential_catalog.rewrap(db, item_id, payload, identity.user.username)
 
 
 @router.get("/documents")

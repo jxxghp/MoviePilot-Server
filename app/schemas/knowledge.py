@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Literal
 from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, field_validator, model_validator
 
 
 def normalized_name(value: str) -> str:
@@ -257,7 +257,10 @@ class SourcePayload(KnowledgePayload):
         连接器参数明确且互相兼容，手工来源不能隐含自动抓取。
         """
         if self.connector == "github":
-            if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", self.repository) or not self.paths:
+            owner, separator, repository = self.repository.partition("/")
+            if (not separator or not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", owner)
+                    or not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", repository) or repository in {".", ".."}
+                    or not self.paths):
                 raise ValueError("GitHub 来源需要明确仓库和路径白名单")
             if self.url or self.selector:
                 raise ValueError("GitHub 来源使用仓库定位，不能附加网页参数")
@@ -278,6 +281,41 @@ class SourceUpdate(SourcePayload):
     """
 
     expected_version: int = Field(ge=1, description="读取表单时的并发版本")
+
+
+class SourceCredentialAction(KnowledgePayload):
+    """
+    来源和秘密同时校验当前版本；零只表示尚无凭据，不代表忽略并发检查。
+    """
+
+    expected_source_version: int = Field(ge=1)
+    expected_credential_version: int = Field(ge=0)
+
+
+class SourceCredentialPayload(SourceCredentialAction):
+    """
+    只接受明确 Cookie 或 Bearer 替换，错误与调试表示不暴露原值。
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+    kind: Literal["cookie", "bearer"]
+    secret: SecretStr = Field(min_length=3, max_length=8192)
+
+    @model_validator(mode="after")
+    def valid_header(self):
+        """
+        凭据只用于单个白名单请求头，禁止控制字符、占位值和整个请求头误粘贴。
+        """
+        value = self.secret.get_secret_value()
+        if (value != value.strip() or any(not 32 <= ord(char) < 127 for char in value)
+                or value.casefold() in {"none", "null", "changeme", "your_token", "your_cookie"}
+                or set(value) <= {"*"} or value.lower().startswith(("cookie:", "authorization:", "bearer "))):
+            raise ValueError("请填写有效认证值，不使用占位值或完整请求头")
+        if self.kind == "bearer" and not re.fullmatch(r"[A-Za-z0-9._~+/-]+=*", value):
+            raise ValueError("Bearer 值格式无效")
+        if self.kind == "cookie" and "=" not in value:
+            raise ValueError("Cookie 值需要包含名称和值")
+        return self
 
 
 class RevisionPayload(KnowledgePayload):

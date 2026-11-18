@@ -12,12 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.audit import record
 from app.models.knowledge import (
-    KnowledgeCollection, KnowledgeDocument, KnowledgeSite, KnowledgeSiteName, KnowledgeSource, timestamp,
+    KnowledgeCollection, KnowledgeCredential, KnowledgeDocument, KnowledgeSite, KnowledgeSiteName, KnowledgeSource, timestamp,
 )
 from app.schemas.knowledge import (
     CollectionPayload, CollectionUpdate, SitePayload, SiteUpdate, SourcePayload, SourceUpdate, normalized_name,
 )
 from app.services.knowledge import jobs
+from app.services.knowledge.network.policy import BOUND_FIELDS
 
 # 固定表和字段白名单只由内部调用选择，避免未来新增秘密字段时被自动回显。
 CatalogKind = Literal["collections", "sites", "sources"]
@@ -236,11 +237,15 @@ async def update_source(db: AsyncSession, identity: str, payload: SourceUpdate, 
     row = await get_row(db, KnowledgeSource, identity, for_update=True)
     changed = row.enabled != payload.enabled
     await validate_source_parents(db, payload)
+    values = source_values(payload)
+    if any(getattr(row, key) != values[key] for key in BOUND_FIELDS):
+        if await db.scalar(select(KnowledgeCredential.id).where(KnowledgeCredential.source_id == identity)):
+            raise HTTPException(409, "来源已绑定采集凭据，请由超级管理员先清除凭据再更改目标范围")
     fixed = ("collection_id", "site_id", "connector", "url", "repository")
     if any(getattr(row, key) != getattr(payload, key) for key in fixed):
         if await db.scalar(select(KnowledgeDocument.id).where(KnowledgeDocument.source_id == identity).limit(1)):
             raise HTTPException(409, "来源已有文档，不能改变其身份或集合、站点归属")
-    await replace_values(db, row, payload.expected_version, source_values(payload))
+    await replace_values(db, row, payload.expected_version, values)
     if changed:
         await jobs.enqueue_index(db, actor)
     record(db, actor, "knowledge.source.update", identity, {"enabled": payload.enabled})
