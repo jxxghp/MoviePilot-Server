@@ -8,13 +8,15 @@ from fastapi.routing import APIRoute
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.auth import AdminIdentity, administrator, super_administrator
+from app.admin.audit import record
 from app.core.config import settings
 from app.db.deps import get_db
+from app.models.knowledge import KnowledgeState
 from app.schemas.knowledge import (
     ClientPayload, ClientUpdate, CollectionPayload, CollectionUpdate, CredentialRotation, DocumentPayload, RevisionCreate,
-    SitePayload, SiteUpdate, SourcePayload, SourceUpdate,
+    KnowledgePayload, PublicationAction, SitePayload, SiteUpdate, SourcePayload, SourceUpdate, VersionAction,
 )
-from app.services.knowledge import access, catalog, documents
+from app.services.knowledge import access, catalog, documents, jobs
 
 
 async def no_store(response: Response) -> None:
@@ -56,11 +58,16 @@ router = APIRouter(prefix="/knowledge", tags=["admin-knowledge"], route_class=Kn
 
 
 @router.get("/status")
-async def status():
+async def status(db: AsyncSession = Depends(get_db)):
     """
     区分可维护草稿与尚未启用的在线知识服务，不展示来源正文。
     """
-    return {"enabled": settings.KNOWLEDGE_ENABLED, "protocol_version": 1}
+    state = await db.get(KnowledgeState, "main")
+    return {"enabled": settings.KNOWLEDGE_ENABLED, "protocol_version": 1, "index": {
+        "generation": state.generation if state else 0,
+        "active_generation": state.active_generation if state else 0,
+        "has_snapshot": bool(state and state.active_snapshot),
+    }}
 
 
 @router.get("/collections")
@@ -224,3 +231,54 @@ async def rotate_client(item_id: str, payload: CredentialRotation, identity: Adm
     轮换后旧令牌立即影响后续请求，新令牌只在本次成功响应中出现。
     """
     return await access.rotate_client(db, item_id, payload.expected_version, identity.user.username)
+
+
+@router.post("/documents/{item_id}/publish")
+async def publish_document(item_id: str, payload: PublicationAction, identity: AdminIdentity = Depends(administrator),
+                           db: AsyncSession = Depends(get_db)):
+    """
+    明确批准所审阅的修订并返回索引任务，不将排队结果展示为可检索。
+    """
+    return await documents.publish_document(db, item_id, payload.expected_version, payload.revision, identity.user.username)
+
+
+@router.post("/documents/{item_id}/withdraw")
+async def withdraw_document(item_id: str, payload: VersionAction, identity: AdminIdentity = Depends(administrator),
+                            db: AsyncSession = Depends(get_db)):
+    """
+    按版本撤回当前发布修订，并保留原文历史。
+    """
+    return await documents.withdraw_document(db, item_id, payload.expected_version, identity.user.username)
+
+
+@router.get("/jobs")
+async def job_list(page: int = Query(1, ge=1), size: int = Query(30, ge=1, le=100),
+                   db: AsyncSession = Depends(get_db)):
+    """
+    管理员查看真实的排队、运行、终态及受控错误摘要。
+    """
+    return await jobs.list_jobs(db, page, size)
+
+
+@router.post("/jobs/index", status_code=202)
+async def request_index(payload: KnowledgePayload, identity: AdminIdentity = Depends(administrator),
+                        db: AsyncSession = Depends(get_db)):
+    """
+    手动请求重建索引，相同活动任务合并；服务关闭时只排队不执行。
+    """
+    job = await jobs.enqueue_index(db, identity.user.username, dirty=False)
+    record(db, identity.user.username, "knowledge.index.request", job.id)
+    result = jobs.job_data(job)
+    await catalog.commit(db)
+    return result
+
+
+@router.post("/jobs/{item_id}/cancel")
+async def cancel_job(item_id: str, payload: VersionAction, identity: AdminIdentity = Depends(administrator),
+                     db: AsyncSession = Depends(get_db)):
+    """
+    等待中的任务立即取消；运行中显示取消请求，执行器确认后进入终态。
+    """
+    result = await jobs.cancel_job(db, item_id, payload.expected_version, identity.user.username)
+    await catalog.commit(db)
+    return result

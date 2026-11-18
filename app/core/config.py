@@ -56,6 +56,8 @@ class Settings(BaseSettings):
 
     # 中心知识在线查询与采集默认关闭；后台仍可预先维护来源和草稿。
     KNOWLEDGE_ENABLED: bool = False
+    # 必须指向仓库和镜像上下文之外的专用私有数据卷。
+    KNOWLEDGE_DATA_DIR: str = ""
 
     # 兼容手工接入：每个 MoviePilot 实例使用独立随机密钥，逗号分隔；为空不影响自动接入。
     PUSH_RELAY_KEYS: str = ""
@@ -91,6 +93,10 @@ class Settings(BaseSettings):
     U115_REDIRECT_URI: str = ""
 
     class Config:
+        """
+        保留部署变量区分大小写和本地 .env 加载的现有约定。
+        """
+
         env_file = ".env"
         case_sensitive = True
 

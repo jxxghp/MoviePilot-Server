@@ -24,9 +24,14 @@ KNOWLEDGE_ENABLED 默认 false，用于控制后续在线检索和采集能力�
 | /documents | GET / POST | 查看摘要、新建手工知识草稿 |
 | /documents/{id} | GET | 读取最新修订，revision 可指定历史修订号 |
 | /documents/{id}/revisions | POST | 按文档版本追加新草稿 |
+| /documents/{id}/publish | POST | 按当前文档版本批准明确修订，返回索引任务 |
+| /documents/{id}/withdraw | POST | 按版本清除发布指针、保留历史并请求重建 |
 | /clients | GET / POST | 超级管理员查看客户端、签发一次性展示的独立令牌 |
 | /clients/{id} | GET / PUT | 超级管理员查看、按版本维护状态、期限及完整集合授权 |
 | /clients/{id}/rotate | POST | 超级管理员按版本轮换令牌，旧令牌对后续请求失效 |
+| /jobs | GET | 分页查看任务真实状态及计数 |
+| /jobs/index | POST | 手动排队重建索引，空 JSON 对象为唯一请求体 |
+| /jobs/{id}/cancel | POST | 按任务版本取消或请求取消 |
 
 列表参数 page 从 1 开始，size 最大 100，q 为名称或标题包含查询。来源可用 collection_id 筛选，文档可用 source_id 筛选。
 
@@ -45,6 +50,35 @@ KNOWLEDGE_ENABLED 默认 false，用于控制后续在线检索和采集能力�
 供后续检索路由复用的 Bearer 认证依赖每次读取当前客户端状态、有效期与集合开关；停用客户端、到期、替换令牌和撤回授权会影响后续请求，不使用共享权限缓存延迟撤回。已开始的请求不承诺中途取消。自报实例 UID、GitHub 用户名、推送令牌或后台 Cookie 都不能替代独立知识令牌。
 
 在线开关关闭时认证返回 503；无效或失效凭据返回 401；有效客户端没有可用集合时返回 403。后续检索工具应区分这些状态和“没有匹配知识”，不能据此编造规则。当前只提供后台维护接口和可复用认证合同，尚未注册公共检索或认证探针路由。
+
+## 批准发布与独立索引
+
+发布请求必须同时包含 expected_version 和明确的 revision。追加草稿不会自动发布，也不会改变原有发布版；发布前应查看目标修订。来源、集合及所属站点均须启用，才能批准发布。publish 响应的 index_pending 表示仍需构建；job.status 为 queued 不能当作已可检索。后台 status 的 generation 表示当前知识事实代次，active_generation 表示已激活快照代次，has_snapshot 只描述 SQL 是否存在快照指针，不代替文件可用性检查。
+
+withdraw 请求包含 expected_version。撤回会在同一事务清除 SQL 发布指针并排队重建。原文历史保留，不能通过回退旧快照恢复读取权限；检索必须重新核对当前 SQL 指针和授权。集合、站点或来源的启停同样会请求重建；重新启用只带回仍被批准发布的修订。
+
+索引任务持久化在数据库中，相同活动索引请求合并。构建期间有新的发布、撤回或开关变化时，完成者不会激活过时代次，而是补排下一任务。任务列表区分 queued、running、succeeded、failed、cancelled；outcome 为 activated 才表示此次完成了切换，superseded 表示构建期间事实改变，后继任务仍需执行。
+
+worker 不在 Uvicorn 生命周期中运行。配置一个仓库之外的专用持久化数据卷，目录仅属主可访问，给 API 与 worker 挂载同一卷和 SQL 数据库，并在两个进程中显式设置：
+
+    KNOWLEDGE_ENABLED=true
+    KNOWLEDGE_DATA_DIR=/config/knowledge
+
+独立运行：
+
+    python -m app.services.knowledge.worker
+
+本地或运维单次执行：
+
+    python -m app.services.knowledge.worker --once
+
+同一 Server 镜像可以通过覆盖 command 运行 worker，默认 Web 启动命令保持不变。首次必须运行包含知识表的数据库结构初始化；worker 自己也会调用现有结构初始化。私有目录不能位于源码、Git 仓库或共享临时目录中；现有目录权限过宽会明确报错，不会自动改动已有共享目录权限。索引为 0400 不可变 SQLite FTS5 文件，目录为 0700。FTS5 不可用会返回固定错误码并受控重试，不会替换为全库扫描或伪成功。
+
+执行器使用 60 秒租约、约 20 秒心跳和单次 10 分钟构建期限；失败最多尝试三次，按 15、30 秒退避。旧租约不能续命或切换索引。等待中的任务可立即取消，运行中的取消由心跳及激活前检查确认；进程强制终止后由租约到期恢复。SIGTERM 停止继续认领并等待当前有界构建。worker 日志、任务错误和审计只记录标识、计数与白名单错误码；数据库引擎即使开启 DEBUG 也隐藏绑定参数。
+
+若激活事务失去提交回执，可能已经提交，因此执行器保留完整快照，再按数据库事实恢复，不能因为网络异常删除已上线文件。旧快照与不确定提交遗留文件暂保留在私有卷中；读端及文件清理合同接通前，请勿把该基础阶段作为长期频繁重建的生产配置。公开检索、JSONL 上传和网络来源执行尚在后续阶段。
+
+可选 PostgreSQL 合同测试通过 KNOWLEDGE_TEST_DATABASE_URL 显式指定本机 knowledge_test 专用数据库。每个案例使用随机 schema 并在结束后删除，拒绝使用其他数据库名；未提供配置时明确跳过，不把方言编译当作数据库集成测试。
 
 ## 来源与正文
 

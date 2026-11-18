@@ -7,11 +7,12 @@ from app.core.config import settings
 
 
 def create_engine() -> AsyncEngine:
-    """创建数据库引擎"""
+    """创建数据库引擎；调试日志和 SQL 异常均隐藏绑定的正文与凭据。"""
     if settings.is_postgresql:
         return create_async_engine(
             settings.database_url,
             echo=settings.DEBUG,
+            hide_parameters=True,
             pool_pre_ping=False,
             pool_size=settings.DB_POOL_SIZE,
             max_overflow=settings.DB_MAX_OVERFLOW,
@@ -23,6 +24,7 @@ def create_engine() -> AsyncEngine:
         return create_async_engine(
             settings.database_url,
             echo=settings.DEBUG,
+            hide_parameters=True,
             pool_pre_ping=True,
         )
 

@@ -10,9 +10,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.audit import record
-from app.models.knowledge import KnowledgeCollection, KnowledgeDocument, KnowledgeRevision, KnowledgeSource
+from app.models.knowledge import KnowledgeCollection, KnowledgeDocument, KnowledgeRevision, KnowledgeSite, KnowledgeSource
 from app.schemas.knowledge import DocumentPayload, RevisionCreate, RevisionPayload
 from app.services.knowledge.catalog import commit, get_row, replace_values
+from app.services.knowledge import jobs
 
 REVISION_FIELDS = (
     "id", "number", "title", "content_hash", "product", "version_scope", "min_version", "max_version",
@@ -137,3 +138,65 @@ async def read_document(db: AsyncSession, identity: str, number: int | None = No
     if revision is None:
         raise HTTPException(404, "知识修订不存在")
     return document_data(row, revision, content=True)
+
+
+async def publish_document(db: AsyncSession, identity: str, expected_version: int, number: int, actor: str) -> dict:
+    """
+    在同一事务批准明确修订、保留历史并排索引任务，成功不代表快照已经上线。
+    """
+    state = await jobs.lock_state(db)
+    row = await get_row(db, KnowledgeDocument, identity, for_update=True)
+    source = await get_row(db, KnowledgeSource, row.source_id, for_update=True)
+    collection = await get_row(db, KnowledgeCollection, source.collection_id, for_update=True)
+    site = await get_row(db, KnowledgeSite, source.site_id) if source.site_id else None
+    if not source.enabled or not collection.enabled or (site is not None and not site.enabled):
+        raise HTTPException(409, "请先启用知识来源、集合和所属站点")
+    revision = await db.scalar(select(KnowledgeRevision).where(
+        KnowledgeRevision.document_id == identity, KnowledgeRevision.number == number,
+    ))
+    if revision is None:
+        raise HTTPException(404, "知识修订不存在")
+    if row.version != expected_version:
+        raise HTTPException(409, "知识记录已被其他操作修改，请刷新后重试")
+    if row.published_revision == number:
+        return {"document": document_data(row, revision), "job": None,
+                "index_pending": not state.active_snapshot or state.active_generation != state.generation}
+    if row.published_revision is not None:
+        previous = await db.scalar(select(KnowledgeRevision).where(
+            KnowledgeRevision.document_id == identity, KnowledgeRevision.number == row.published_revision,
+        ))
+        previous.state = "superseded"
+    revision.state = "published"
+    await replace_values(db, row, expected_version, {"published_revision": number})
+    await db.flush()
+    job = await jobs.enqueue_index(db, actor)
+    record(db, actor, "knowledge.document.publish", identity, {"revision": number})
+    await db.refresh(row)
+    result = {"document": document_data(row, revision), "job": jobs.job_data(job), "index_pending": True}
+    await commit(db)
+    return result
+
+
+async def withdraw_document(db: AsyncSession, identity: str, expected_version: int, actor: str) -> dict:
+    """
+    立即清除 SQL 发布指针并请求重建；即使旧快照仍在，检索也须拒绝已撤回内容。
+    """
+    await jobs.lock_state(db)
+    row = await get_row(db, KnowledgeDocument, identity, for_update=True)
+    number = row.published_revision
+    if row.version != expected_version:
+        raise HTTPException(409, "知识记录已被其他操作修改，请刷新后重试")
+    revision = await db.scalar(select(KnowledgeRevision).where(
+        KnowledgeRevision.document_id == identity, KnowledgeRevision.number == (number or row.head_revision),
+    ))
+    if number is None:
+        return {"document": document_data(row, revision), "job": None, "index_pending": False}
+    revision.state = "withdrawn"
+    await replace_values(db, row, expected_version, {"published_revision": None})
+    await db.flush()
+    job = await jobs.enqueue_index(db, actor)
+    record(db, actor, "knowledge.document.withdraw", identity, {"revision": number})
+    await db.refresh(row)
+    result = {"document": document_data(row, revision), "job": jobs.job_data(job), "index_pending": True}
+    await commit(db)
+    return result

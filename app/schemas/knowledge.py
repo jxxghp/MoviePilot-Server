@@ -142,6 +142,22 @@ class CredentialRotation(KnowledgePayload):
     expected_version: int = Field(ge=1, description="读取客户端时的并发版本")
 
 
+class VersionAction(KnowledgePayload):
+    """
+    发布、撤回和任务取消使用读取时的版本，不接受其他状态覆盖字段。
+    """
+
+    expected_version: int = Field(ge=1, description="读取维护对象时的并发版本")
+
+
+class PublicationAction(VersionAction):
+    """
+    显式批准已审阅的修订号，不能在并发追加草稿后误发布新内容。
+    """
+
+    revision: int = Field(ge=1, description="明确批准发布的修订号")
+
+
 class SitePayload(KnowledgePayload):
     """
     创建站点及别名；名称与域名也参与全局歧义检查。

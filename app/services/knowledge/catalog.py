@@ -17,6 +17,7 @@ from app.models.knowledge import (
 from app.schemas.knowledge import (
     CollectionPayload, CollectionUpdate, SitePayload, SiteUpdate, SourcePayload, SourceUpdate, normalized_name,
 )
+from app.services.knowledge import jobs
 
 # 固定表和字段白名单只由内部调用选择，避免未来新增秘密字段时被自动回显。
 CatalogKind = Literal["collections", "sites", "sources"]
@@ -124,13 +125,17 @@ async def update_collection(db: AsyncSession, identity: str, payload: Collection
     """
     更新显示与启停；已有来源的产品和领域不能被静默改写。
     """
+    await jobs.lock_state(db)
     row = await get_row(db, KnowledgeCollection, identity, for_update=True)
+    changed = row.enabled != payload.enabled
     if row.slug != payload.slug:
         raise HTTPException(409, "集合稳定标识不能修改")
     if (row.domain, row.product) != (payload.domain, payload.product):
         if await db.scalar(select(KnowledgeSource.id).where(KnowledgeSource.collection_id == identity).limit(1)):
             raise HTTPException(409, "集合已有来源，不能改变领域或产品归属")
     await replace_values(db, row, payload.expected_version, payload.model_dump(exclude={"expected_version"}))
+    if changed:
+        await jobs.enqueue_index(db, actor)
     record(db, actor, "knowledge.collection.update", identity, {"enabled": payload.enabled})
     await commit(db)
     await db.refresh(row)
@@ -174,13 +179,17 @@ async def update_site(db: AsyncSession, identity: str, payload: SiteUpdate, acto
     """
     原子替换本站别名；已绑定来源的主域名保持稳定。
     """
+    await jobs.lock_state(db)
     row = await get_row(db, KnowledgeSite, identity, for_update=True)
+    changed = row.enabled != payload.enabled
     if row.domain != payload.domain:
         if await db.scalar(select(KnowledgeSource.id).where(KnowledgeSource.site_id == identity).limit(1)):
             raise HTTPException(409, "站点已绑定来源，请为新域名建立独立站点")
     await replace_values(db, row, payload.expected_version, payload.model_dump(exclude={"expected_version", "aliases"}))
     await db.execute(delete(KnowledgeSiteName).where(KnowledgeSiteName.site_id == identity))
     db.add_all(site_names(identity, payload))
+    if changed:
+        await jobs.enqueue_index(db, actor)
     record(db, actor, "knowledge.site.update", identity, {"alias_count": len(payload.aliases), "enabled": payload.enabled})
     await commit(db)
     await db.refresh(row)
@@ -223,13 +232,17 @@ async def update_source(db: AsyncSession, identity: str, payload: SourceUpdate, 
     """
     来源已有文档后不改写身份和归属，路径调整仍需后续任务生成新草稿。
     """
+    await jobs.lock_state(db)
     row = await get_row(db, KnowledgeSource, identity, for_update=True)
+    changed = row.enabled != payload.enabled
     await validate_source_parents(db, payload)
     fixed = ("collection_id", "site_id", "connector", "url", "repository")
     if any(getattr(row, key) != getattr(payload, key) for key in fixed):
         if await db.scalar(select(KnowledgeDocument.id).where(KnowledgeDocument.source_id == identity).limit(1)):
             raise HTTPException(409, "来源已有文档，不能改变其身份或集合、站点归属")
     await replace_values(db, row, payload.expected_version, source_values(payload))
+    if changed:
+        await jobs.enqueue_index(db, actor)
     record(db, actor, "knowledge.source.update", identity, {"enabled": payload.enabled})
     await commit(db)
     await db.refresh(row)

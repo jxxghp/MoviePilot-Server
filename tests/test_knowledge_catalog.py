@@ -27,7 +27,8 @@ PASSWORD = "synthetic-knowledge-password-123"
 ROOT = "/admin/api/knowledge"
 
 
-def run_scenario(monkeypatch, scenario, *, database_url="sqlite+aiosqlite:///:memory:", extra_router=None):
+def run_scenario(monkeypatch, scenario, *, database_url="sqlite+aiosqlite:///:memory:", extra_router=None,
+                 connect_args=None):
     """
     使用真实 ASGI、管理员会话和外键校验，不访问运行期 SQL 或 Redis。
     """
@@ -35,14 +36,15 @@ def run_scenario(monkeypatch, scenario, *, database_url="sqlite+aiosqlite:///:me
         """
         每个场景在独立事件循环内创建并关闭临时资源。
         """
-        engine = create_async_engine(database_url)
+        engine = create_async_engine(database_url, connect_args=connect_args or {})
 
-        @event.listens_for(engine.sync_engine, "connect")
-        def foreign_keys(connection, _record):
-            """
-            打开 SQLite 外键，避免本地测试掩盖 PostgreSQL 的父子写入问题。
-            """
-            connection.execute("PRAGMA foreign_keys=ON")
+        if engine.dialect.name == "sqlite":
+            @event.listens_for(engine.sync_engine, "connect")
+            def foreign_keys(connection, _record):
+                """
+                打开 SQLite 外键，避免本地测试掩盖 PostgreSQL 的父子写入问题。
+                """
+                connection.execute("PRAGMA foreign_keys=ON")
 
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
