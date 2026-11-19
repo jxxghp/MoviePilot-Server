@@ -79,6 +79,56 @@ async def read(client, token, identifier):
     })
 
 
+async def agent_search(client, *, query="ratio", **scope):
+    """通过无配置 Agent 路由查询公共知识，不发送用户凭据。"""
+    return await client.post(API + "/agent/search", json={
+        "protocol_version": 1, "query": query, "product": "moviepilot", "product_version": "3.2.5", **scope,
+    })
+
+
+async def agent_read(client, identifier):
+    """使用相同 ASGI 连接身份消费 Agent 搜索产生的短期引用。"""
+    return await client.post(API + "/agent/read", json={"protocol_version": 1, "evidence_id": identifier})
+
+
+def test_public_agent_search_uses_generic_rules_and_labeled_pt_examples(monkeypatch, tmp_path):
+    """无 token 的 Agent 可读公开发布知识，并把站点资料明确呈现为例子。"""
+    async def scenario(client, sessions, _redis):
+        """创建通用 PT 规则和单站示例，构建索引后走真实 Agent HTTP 路由。"""
+        headers = await login(client)
+        parent = await collection(client, headers, slug="pt-guide", domain="pt")
+        site = (await client.post(ROOT + "/sites", headers=headers, json={
+            "name": "合成示例站", "domain": "tracker.example", "aliases": ["示例站"],
+        })).json()
+        generic = await source(client, headers, parent, name="通用 PT 规则")
+        specific = await source(client, headers, parent, site=site, name="示例站规则")
+        await article(client, headers, generic, external_id="general", content="ratio 是 PT 常见分享率规则")
+        await article(client, headers, specific, external_id="sample", content="ratio 示例站采用分享率要求")
+        await ready(monkeypatch, tmp_path, sessions)
+
+        result = await agent_search(client, query="ratio", domain="pt", site="未收录站")
+        assert result.status_code == 200, result.text
+        data = result.json()
+        assert data["status"] == "matched"
+        assert "pt_site_examples_only" in data["notices"]
+        assert "unknown_or_unavailable_site" in data["notices"]
+        generic_evidence = next(item for item in data["evidence"] if item["site_name"] is None)
+        sample_evidence = next(item for item in data["evidence"] if item["site_name"] == "合成示例站")
+        assert generic_evidence["excerpt"] and sample_evidence["excerpt"]
+        assert "site_id" in sample_evidence and sample_evidence["site_id"] == site["id"]
+        expanded = await agent_read(client, sample_evidence["evidence_id"])
+        assert expanded.status_code == 200 and expanded.json()["evidence"][0]["site_name"] == "合成示例站"
+
+        private = await client.post(API + "/search", json={
+            "protocol_version": 1, "query": "ratio", "product": "moviepilot", "domain": "pt",
+        })
+        assert private.status_code == 401
+        monkeypatch.setattr(settings, "KNOWLEDGE_ENABLED", False)
+        disabled = await agent_search(client, query="ratio", domain="pt")
+        assert disabled.status_code == 503 and disabled.json()["status"] == "unavailable"
+    run_scenario(monkeypatch, scenario)
+
+
 def test_search_read_bounded_evidence_and_metadata_only_references(monkeypatch, tmp_path):
     """中文、配置键、补读、跨客户端引用和 Redis 最小留存通过实际接口验证。"""
     async def scenario(client, sessions, redis):
@@ -153,8 +203,10 @@ def test_product_version_site_and_content_kind_are_filtered(monkeypatch, tmp_pat
         await ready(monkeypatch, tmp_path, sessions)
         token = issued["token"]
         general_result = (await search(client, token, domain="pt")).json()
-        assert [item["document_id"] for item in general_result["evidence"]] == [general["id"]]
+        assert {item["document_id"] for item in general_result["evidence"]} == {general["id"], specific["id"]}
         assert "site_unspecified" in general_result["notices"]
+        assert "pt_site_examples_only" in general_result["notices"]
+        assert next(item for item in general_result["evidence"] if item["document_id"] == specific["id"])["site_name"] == "甲站"
         scoped = (await search(client, token, domain="pt", site="甲站别名")).json()
         assert {item["document_id"] for item in scoped["evidence"]} == {general["id"], specific["id"]}
         assert (await search(client, token, query="versionneedle", domain="pt")).json()["evidence"][0]["document_id"] == valid["id"]

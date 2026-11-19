@@ -87,6 +87,30 @@ def test_missing_online_configuration_is_cached_with_environment_fallback(monkey
     asyncio.run(run())
 
 
+def test_central_knowledge_switch_uses_admin_override_and_environment_fallback(monkeypatch):
+    """Server 管理开关优先于环境变量，旧配置继续沿用部署开关。"""
+    async def run():
+        """检查尚未设置值与持久化开启、关闭值。"""
+        monkeypatch.setattr(settings, "KNOWLEDGE_ENABLED", True)
+        legacy = FeatureDatabase(None)
+        assert await config.knowledge_enabled(legacy)
+
+        monkeypatch.setattr(cache_manager, "features_cache", Cache(maxsize=1, ttl=3))
+        disabled = FeaturesPayload(
+            community_medals_enabled=False, central_knowledge_enabled=False,
+            community_medals_preview_users=[], github_admin_users=[],
+        )
+        database = FeatureDatabase(disabled)
+        assert not await config.knowledge_enabled(database)
+        database.row = SimpleNamespace(value=FeaturesPayload(
+            community_medals_enabled=False, central_knowledge_enabled=True,
+            community_medals_preview_users=[], github_admin_users=[],
+        ).model_dump_json())
+        cache_manager.features_cache.clear()
+        assert await config.knowledge_enabled(database)
+    asyncio.run(run())
+
+
 def test_database_failure_does_not_poison_feature_cache():
     """查询故障仍向调用者报告，恢复后能够正常填充缓存。"""
     async def run():

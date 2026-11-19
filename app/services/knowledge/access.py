@@ -3,12 +3,13 @@
 """
 
 import hashlib
+import ipaddress
 import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
@@ -29,11 +30,17 @@ bearer = HTTPBearer(auto_error=False, scheme_name="KnowledgeClient")
 class KnowledgePrincipal:
     """
     本次请求经中心验证的主体和有效集合范围，不接收调用方自报的 UID 或角色。
+
+    :ivar client_id: 已验证的管理客户端或连接地址摘要
+    :ivar version: 管理客户端授权版本；公共 Agent 主体固定为 1
+    :ivar collection_ids: 本次可读的启用知识集合
+    :ivar public: 是否只能读取已发布的公共知识
     """
 
     client_id: str
     version: int
     collection_ids: tuple[str, ...]
+    public: bool = False
 
     def require_collection(self, collection_id: str) -> None:
         """
@@ -48,6 +55,37 @@ def token_digest(token: str) -> str:
     对中心生成的高熵随机令牌取摘要；此结果仅用于数据库匹配。
     """
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def request_address(request: Request) -> str:
+    """
+    仅在显式信任的反向代理地址读取其覆盖写入的客户端地址头。
+
+    :param request: 当前 ASGI 请求
+    :return: 可用于匿名引用隔离和配额的规范 IP 或连接地址
+    """
+    peer = request.client.host if request.client else "unknown"
+    try:
+        peer_ip = ipaddress.ip_address(peer)
+    except ValueError:
+        return peer
+    trusted = settings.KNOWLEDGE_TRUSTED_PROXY_ADDRESSES.split(",")
+    if not any(value.strip() and _matches_ip(peer_ip, value.strip()) for value in trusted):
+        return peer
+    forwarded = request.headers.get("x-real-ip", "")
+    try:
+        return ipaddress.ip_address(forwarded).compressed if forwarded else peer
+    except ValueError:
+        return peer
+
+
+def _matches_ip(peer: ipaddress.IPv4Address | ipaddress.IPv6Address, value: str) -> bool:
+    """比较已配置的代理 IP 或网段；错误配置不会扩大信任范围。"""
+    try:
+        network = ipaddress.ip_network(value, strict=False)
+        return peer.version == network.version and peer in network
+    except ValueError:
+        return False
 
 
 def client_metadata(row, collection_ids: list[str]) -> dict:
@@ -168,7 +206,9 @@ async def authenticate(db: AsyncSession, token: str) -> KnowledgePrincipal:
     """
     每次请求读取当前摘要、状态、时限和集合开关，不用共享缓存延迟撤销。
     """
-    if not settings.KNOWLEDGE_ENABLED:
+    from app.admin.config import knowledge_enabled
+
+    if not await knowledge_enabled(db):
         raise HTTPException(503, "中心知识服务尚未启用")
     unauthorized = HTTPException(401, "知识访问凭据无效或已失效", headers={"WWW-Authenticate": "Bearer"})
     if not re.fullmatch(r"mpk_[A-Za-z0-9_-]{43}", token):
@@ -201,3 +241,25 @@ async def knowledge_principal(credentials: HTTPAuthorizationCredentials | None =
     """
     token = credentials.credentials if credentials is not None and credentials.scheme.lower() == "bearer" else ""
     return await authenticate(db, token)
+
+
+async def knowledge_agent_principal(request: Request, db: AsyncSession = Depends(get_db)) -> KnowledgePrincipal:
+    """
+    为所有 MP Agent 提供公开发布集合的只读主体；引用按连接地址摘要隔离。
+
+    :param request: 当前 HTTP 连接，转发头不作为身份依据
+    :param db: 读取当前启用的公开知识集合
+    :return: 不具备后台权限的公共检索主体
+    """
+    from app.admin.config import knowledge_enabled
+
+    if not await knowledge_enabled(db):
+        raise HTTPException(503, "中心知识服务尚未启用")
+    address = request_address(request)
+    client_id = "agent_" + hashlib.sha256(address.encode("utf-8")).hexdigest()
+    rows = (await db.execute(select(KnowledgeCollection.id, KnowledgeCollection.domain,
+                                   KnowledgeCollection.product).where(
+        KnowledgeCollection.enabled.is_(True),
+    ).order_by(KnowledgeCollection.id))).all()
+    return KnowledgePrincipal(client_id=client_id, version=1,
+                              collection_ids=tuple(row.id for row in rows), public=True)

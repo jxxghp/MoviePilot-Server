@@ -44,8 +44,17 @@ def test_real_nginx_preserves_private_routes(tmp_path, prefix):
     if not nginx:
         pytest.skip("本机未安装 Nginx")
     source = (Path(__file__).parents[1] / "docker/nginx.conf").read_text()
-    blocks = re.findall(rf"\t\tlocation (?:= /{prefix}|\^~ /{prefix}/) \{{.*?\n\t\t\}}", source, re.S)
-    assert len(blocks) == (1 if prefix == "recognize/mapping" else 2)
+    route_pattern = (
+        r"\t\tlocation (?:= /knowledge|\^~ /knowledge/(?!v1/agent/)) \{.*?\n\t\t\}"
+        if prefix == "knowledge" else
+        rf"\t\tlocation (?:= /{prefix}|\^~ /{prefix}/) \{{.*?\n\t\t\}}"
+    )
+    blocks = re.findall(route_pattern, source, re.S)
+    if prefix == "knowledge":
+        agent_block = re.findall(r"\t\tlocation \^~ /knowledge/v1/agent/ \{.*?\n\t\t\}", source, re.S)
+        assert len(agent_block) == 1 and 'proxy_set_header Authorization "";' in agent_block[0]
+        blocks.extend(agent_block)
+    assert len(blocks) == (1 if prefix == "recognize/mapping" else 3 if prefix == "knowledge" else 2)
     if prefix == "recognize/mapping":
         assert "proxy_connect_timeout 1s;" in blocks[0]
         assert "proxy_read_timeout 2s;" in blocks[0]
@@ -90,7 +99,8 @@ def test_real_nginx_preserves_private_routes(tmp_path, prefix):
         else:
             pytest.fail("隔离 Nginx 未启动")
         suffixes = ("?check=1", "?case=/unauthorized") if prefix == "recognize/mapping" else (
-            "/", "/users", "/api/auth/me?check=1", "/assets/main.js", "/logo.png", "/app/worker.js", "/unauthorized",
+            "/", "/users", "/api/auth/me?check=1", "/assets/main.js", "/logo.png", "/app/worker.js",
+            "/v1/agent/search", "/unauthorized",
         )
         for suffix in suffixes:
             path = f"/{prefix}{suffix}"
@@ -102,17 +112,19 @@ def test_real_nginx_preserves_private_routes(tmp_path, prefix):
             assert response.status == (401 if suffix.endswith("/unauthorized") else 200)
             assert response.read().decode() == path
             assert response.getheader("Cache-Control") == "no-store"
-            assert response.getheader("X-Echo-Authorization") == "Bearer test-private-credential"
+            expected_authorization = "" if prefix == "knowledge" and suffix.startswith("/v1/agent/") else "Bearer test-private-credential"
+            assert response.getheader("X-Echo-Authorization") == expected_authorization
             if prefix in {"push", "knowledge"}:
                 assert response.getheader("X-Echo-Forwarded-For") == "127.0.0.1"
             connection.close()
         if prefix == "knowledge":
-            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
-            connection.request("POST", "/knowledge/v1/search", body=b"x" * 8193)
-            response = connection.getresponse()
-            assert response.status == 413 and response.getheader("Cache-Control") == "no-store"
-            response.read()
-            connection.close()
+            for route in ("/knowledge/v1/search", "/knowledge/v1/agent/search"):
+                connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+                connection.request("POST", route, body=b"x" * 8193)
+                response = connection.getresponse()
+                assert response.status == 413 and response.getheader("Cache-Control") == "no-store"
+                response.read()
+                connection.close()
         if prefix == "recognize/mapping":
             return
         connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)

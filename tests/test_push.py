@@ -5,6 +5,7 @@
 import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import fakeredis.aioredis
 import httpx
@@ -249,6 +250,8 @@ def test_expired_codes_foreign_routes_topic_and_abuse_limit(monkeypatch, tmp_pat
     """
     失效绑定码、其他 topic、外站跳转和超过共享配额的请求均不可接受。
     """
+    # 固定限流模块的时间，避免跨分钟执行时把请求分到两个合法窗口。
+    monkeypatch.setattr("app.services.push.registry.time", SimpleNamespace(time=lambda: 1_700_000_000.0))
     async def scenario(client, _factory, _delivery, redis):
         """
         错误输入不会进入投递器，跨请求配额保存在共享 Redis。

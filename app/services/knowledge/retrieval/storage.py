@@ -91,7 +91,7 @@ async def bounded(function, *arguments, **parameters):
 
 def candidates(directory, snapshot, expression, collections, spec, site_id, *, broad=False):
     """
-    在候选截断前过滤产品、版本和站点，返回内部身份与位置，不返回未验证正文。
+    在候选截断前过滤产品、版本和站点；PT 泛查可把站点资料作为示例候选。
     """
     deadline = time.monotonic() + QUERY_SECONDS
     with contextlib.closing(connect(directory, snapshot)) as db:
@@ -100,9 +100,10 @@ def candidates(directory, snapshot, expression, collections, spec, site_id, *, b
         params = [expression, *collections]
         conditions.append("c.product IN ('',?)")
         params.append(spec.product)
-        conditions.append("(c.site_id IS NULL OR c.site_id=?)" if site_id else "c.site_id IS NULL")
-        if site_id:
-            params.append(site_id)
+        if spec.domain != "pt" or site_id is not None:
+            conditions.append("(c.site_id IS NULL OR c.site_id=?)" if site_id else "c.site_id IS NULL")
+            if site_id:
+                params.append(site_id)
         if spec.purpose != "development":
             conditions.append("c.kind != 'test'")
         if not broad:

@@ -56,6 +56,7 @@ class Settings(BaseSettings):
 
     # 中心知识在线查询与采集默认关闭；后台仍可预先维护来源和草稿。
     KNOWLEDGE_ENABLED: bool = False
+    KNOWLEDGE_TRUSTED_PROXY_ADDRESSES: str = "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
     # 必须指向仓库和镜像上下文之外的专用私有数据卷。
     KNOWLEDGE_DATA_DIR: str = ""
     # 仓库外、仅属主可读的命名密钥环文件；空值不允许保存或解密采集凭据。

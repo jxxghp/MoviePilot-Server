@@ -15,10 +15,31 @@ from app.core.config import settings
 from app.models import Base
 from app.models.admin import AdminAudit, AdminUser
 from app.models.knowledge import KnowledgeClient, KnowledgeGrant
-from app.services.knowledge.access import KnowledgePrincipal, knowledge_principal
+from app.services.knowledge.access import KnowledgePrincipal, knowledge_principal, request_address
 from test_knowledge_catalog import ROOT, collection, login, run_scenario as catalog_scenario
 
 probe = APIRouter(prefix="/knowledge-access-test")
+
+
+def test_request_address_accepts_forwarding_header_only_from_trusted_proxy(monkeypatch):
+    """外部客户端不能伪造转发头；显式信任的 Nginx 地址可用于限流。"""
+    from starlette.requests import Request
+
+    def request(peer, headers=()):
+        """构造最小 ASGI 请求并保持输入头原样。"""
+        return Request({
+            "type": "http", "method": "GET", "path": "/knowledge/v1/agent/search",
+            "headers": [(name.lower().encode(), value.encode()) for name, value in headers],
+            "client": (peer, 1234), "server": ("test", 443), "scheme": "https",
+            "query_string": b"", "root_path": "", "http_version": "1.1",
+        })
+
+    monkeypatch.setattr(settings, "KNOWLEDGE_TRUSTED_PROXY_ADDRESSES", "127.0.0.1,::1,172.17.0.1")
+    assert request_address(request("8.8.8.8", [("X-Real-IP", "203.0.113.4")])) == "8.8.8.8"
+    assert request_address(request("127.0.0.1", [("X-Real-IP", "203.0.113.4")])) == "203.0.113.4"
+    assert request_address(request("172.17.0.1", [("X-Real-IP", "203.0.113.4")])) == "203.0.113.4"
+    assert request_address(request("172.17.0.2", [("X-Real-IP", "203.0.113.4")])) == "172.17.0.2"
+    assert request_address(request("::1", [("X-Real-IP", "bad-address")])) == "::1"
 CLIENTS = ROOT + "/clients"
 
 

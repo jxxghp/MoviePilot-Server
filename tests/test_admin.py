@@ -185,10 +185,17 @@ def test_online_features_reach_public_contract(monkeypatch):
         csrf = await login(client)
         await client.get("/user/features")
         await client.get("/user/permissions", params={"github_user": "Bob"})
-        payload = {"community_medals_enabled": True, "community_medals_preview_users": [" Alice "], "github_admin_users": ["Bob"]}
+        payload = {
+            "central_knowledge_enabled": True, "community_medals_enabled": True,
+            "community_medals_preview_users": [" Alice "], "github_admin_users": ["Bob"],
+        }
         assert (await client.put("/admin/api/features", headers=csrf, json=payload)).status_code == 200
         assert await redis.get(admin_cache_invalidation.key()) == "1"
         assert (await client.get("/user/features")).json() == {"community_medals": True}
+        assert (await client.get("/admin/api/knowledge/status")).json()["enabled"] is True
+        payload["central_knowledge_enabled"] = False
+        assert (await client.put("/admin/api/features", headers=csrf, json=payload)).status_code == 200
+        assert (await client.get("/admin/api/knowledge/status")).json()["enabled"] is False
         alice = (await client.get("/user/permissions", params={"github_user": "ALICE"})).json()
         bob = (await client.get("/user/permissions", params={"github_user": "Bob"})).json()
         assert alice["community_medals_preview"] and not alice["is_admin"]

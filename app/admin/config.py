@@ -26,9 +26,13 @@ async def _read_stored_features(db: AsyncSession) -> FeaturesPayload | None:
 def _effective_features(payload: FeaturesPayload | None) -> dict:
     """返回独立配置副本，缺失数据库配置时继续使用环境变量。"""
     if payload is not None:
-        return payload.model_dump()
+        values = payload.model_dump()
+        if "central_knowledge_enabled" not in payload.model_fields_set:
+            values["central_knowledge_enabled"] = settings.KNOWLEDGE_ENABLED
+        return values
     return {
         "community_medals_enabled": settings.COMMUNITY_MEDALS_ENABLED,
+        "central_knowledge_enabled": settings.KNOWLEDGE_ENABLED,
         "community_medals_preview_users": sorted(settings.community_medals_preview_users),
         "github_admin_users": sorted(settings.admin_users),
     }
@@ -51,6 +55,11 @@ async def read_cached_features(db: AsyncSession) -> dict:
                 if generation == cache_manager.features_generation:
                     cache_manager.features_cache.set(FEATURES_KEY, payload)
     return _effective_features(payload)
+
+
+async def knowledge_enabled(db: AsyncSession) -> bool:
+    """读取后台知识总开关；未保存过在线配置时沿用部署环境设置。"""
+    return bool((await read_cached_features(db))["central_knowledge_enabled"])
 
 
 async def save_features(db: AsyncSession, payload: FeaturesPayload, actor: AdminUser) -> dict:

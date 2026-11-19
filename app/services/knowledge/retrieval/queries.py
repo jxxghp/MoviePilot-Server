@@ -7,7 +7,7 @@ import unicodedata
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import and_, case, exists, func, or_, select
+from sqlalchemy import and_, case, exists, func, or_, select, true
 
 from app.core.config import settings
 from app.models.knowledge import (
@@ -54,6 +54,11 @@ async def collections(db, principal) -> list:
     """
     授权不使用进程或共享缓存，版本变化会使本次旧主体失效。
     """
+    if principal.public:
+        return (await db.execute(select(KnowledgeCollection.id, KnowledgeCollection.domain,
+                                       KnowledgeCollection.product).where(
+            KnowledgeCollection.id.in_(principal.collection_ids), KnowledgeCollection.enabled.is_(True),
+        ).order_by(KnowledgeCollection.id))).all()
     rows = (await db.execute(select(KnowledgeCollection.id, KnowledgeCollection.domain, KnowledgeCollection.product)
                              .join(KnowledgeGrant, KnowledgeGrant.collection_id == KnowledgeCollection.id)
                              .join(KnowledgeClient, KnowledgeClient.id == KnowledgeGrant.client_id).where(
@@ -83,7 +88,7 @@ def metadata_statement(principal, spec, site_id):
     """
     正文和出处投影共享实时授权、发布指针、产品、站点和启停条件。
     """
-    permitted = exists(select(KnowledgeGrant.client_id).join(
+    permitted = true() if principal.public else exists(select(KnowledgeGrant.client_id).join(
         KnowledgeClient, KnowledgeClient.id == KnowledgeGrant.client_id,
     ).where(KnowledgeGrant.client_id == principal.client_id,
             KnowledgeGrant.collection_id == KnowledgeCollection.id, KnowledgeClient.enabled.is_(True),
@@ -94,7 +99,8 @@ def metadata_statement(principal, spec, site_id):
         KnowledgeRevision.product, KnowledgeRevision.version_scope, KnowledgeRevision.min_version,
         KnowledgeRevision.max_version, KnowledgeRevision.source_url, KnowledgeRevision.source_commit,
         KnowledgeRevision.fetched_at, KnowledgeRevision.valid_until, KnowledgeSource.id.label("source_id"),
-        KnowledgeSource.name.label("source_label"), KnowledgeSource.site_id, KnowledgeCollection.domain,
+        KnowledgeSource.name.label("source_label"), KnowledgeSource.site_id, KnowledgeSite.name.label("site_name"),
+        KnowledgeCollection.domain,
         KnowledgeCollection.name.label("collection_label"),
     ).select_from(KnowledgeDocument).join(
         KnowledgeRevision, (KnowledgeRevision.document_id == KnowledgeDocument.id) &
@@ -106,8 +112,9 @@ def metadata_statement(principal, spec, site_id):
         KnowledgeRevision.state == "published", KnowledgeCollection.enabled.is_(True),
         KnowledgeSource.enabled.is_(True), or_(KnowledgeSource.site_id.is_(None), KnowledgeSite.enabled.is_(True)),
         KnowledgeRevision.product.in_(["", spec.product]),
-        or_(KnowledgeSource.site_id.is_(None), KnowledgeSource.site_id == site_id) if site_id else
-        KnowledgeSource.site_id.is_(None),
+        (true() if spec.domain == "pt" and site_id is None else
+         or_(KnowledgeSource.site_id.is_(None), KnowledgeSource.site_id == site_id) if site_id else
+         KnowledgeSource.site_id.is_(None)),
         KnowledgeCollection.domain == spec.domain if spec.domain else True,
     )
 
@@ -137,6 +144,7 @@ def evidence(row, candidate, excerpt: str) -> dict:
         "document_id": row.document_id, "revision": row.revision, "title": row.title, "excerpt": excerpt,
         "source_label": row.source_label, "collection_label": row.collection_label, "source_url": row.source_url,
         "source_commit": row.source_commit, "domain": row.domain, "product": row.product, "site_id": row.site_id,
+        "site_name": row.site_name,
         "applicable_versions": {"scope": row.version_scope, "min": row.min_version, "max": row.max_version},
         "fetched_at": row.fetched_at, "valid_until": row.valid_until, "freshness": freshness,
         "stale": False if row.valid_until else None,
@@ -179,7 +187,7 @@ async def search(db, principal, spec) -> dict:
     if not allowed:
         return response("not_applicable", None, notices=["scope_unavailable"])
     site_id = await resolve_site(db, spec, allowed)
-    if spec.site and not site_id:
+    if spec.site and not site_id and spec.domain != "pt":
         return response("not_applicable", None, notices=["unknown_or_unavailable_site"])
     terms = expression(spec.query)
     if not terms:
@@ -193,7 +201,11 @@ async def search(db, principal, spec) -> dict:
         raise HTTPException(503, "knowledge_index_not_ready")
     snapshot = state.active_snapshot
     generation = state.active_generation
-    notices = ["site_unspecified"] if spec.domain == "pt" and not site_id else []
+    notices = ["site_unspecified"] if spec.domain == "pt" and not site_id and not spec.site else []
+    if spec.domain == "pt" and not site_id:
+        notices.append("pt_site_examples_only")
+    if spec.site and not site_id:
+        notices.append("unknown_or_unavailable_site")
     for attempt in range(2):
         try:
             candidates = await storage.bounded(storage.candidates, directory, snapshot, terms, allowed, spec, site_id)
@@ -269,7 +281,8 @@ async def search(db, principal, spec) -> dict:
     if state.generation != generation:
         raise HTTPException(503, "knowledge_index_updating", headers={"Retry-After": "5"})
     # 只在当前范围中查有界身份，区分不适用材料和完全没有匹配，不返回其正文。
-    broad = await storage.bounded(storage.candidates, directory, snapshot, terms, allowed, spec, site_id, broad=True)
+    broad = await storage.bounded(storage.candidates, directory, snapshot, terms, allowed, spec, site_id,
+                                 broad=True)
     known = await metadata(db, principal, spec, site_id, broad)
     reasons = {reason for row in known.values() if (reason := applicability(row, spec))}
     return response("not_applicable" if reasons else "no_match", generation, notices=[*notices, *reasons])

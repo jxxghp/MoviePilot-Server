@@ -51,6 +51,7 @@ class FeaturesPayload(AdminPayload):
     """允许在线修改的公开功能配置，不包含任何部署密钥。"""
 
     community_medals_enabled: bool
+    central_knowledge_enabled: bool = False
     community_medals_preview_users: list[str] = Field(max_length=200)
     github_admin_users: list[str] = Field(max_length=200)
 

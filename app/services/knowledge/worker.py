@@ -82,9 +82,11 @@ class KnowledgeWorker:
         """
         只在在线开关启用时执行一项任务，区分采集待审、导入与索引激活。
         """
-        if not settings.KNOWLEDGE_ENABLED:
-            return None
+        from app.admin.config import knowledge_enabled
+
         async with self.sessions() as db:
+            if not await knowledge_enabled(db):
+                return None
             await import_catalog.cleanup(db, import_files.import_directory(self.directory))
         async with self.sessions() as db:
             await retrieval_storage.collect(db, self.directory)

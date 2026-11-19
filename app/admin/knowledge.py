@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.auth import AdminIdentity, administrator, super_administrator
 from app.admin.audit import record
+from app.admin.config import knowledge_enabled
 from app.core.config import settings
 from app.db.deps import get_db
 from app.models.knowledge import KnowledgeImport, KnowledgeJob, KnowledgeState
@@ -70,7 +71,7 @@ async def status(db: AsyncSession = Depends(get_db)):
     区分可维护草稿与尚未启用的在线知识服务，不展示来源正文。
     """
     state = await db.get(KnowledgeState, "main")
-    return {"enabled": settings.KNOWLEDGE_ENABLED, "protocol_version": 1, "index": {
+    return {"enabled": await knowledge_enabled(db), "protocol_version": 1, "index": {
         "generation": state.generation if state else 0,
         "active_generation": state.active_generation if state else 0,
         "has_snapshot": bool(state and state.active_snapshot),

@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from sqlalchemy import delete, exists, func, select
 
 from app.admin.audit import record
+from app.admin.config import knowledge_enabled
 from app.core.config import settings
 from app.models.knowledge import (
     KnowledgeCollectCandidate, KnowledgeCollectReceipt, KnowledgeCollectTask, KnowledgeCredential, KnowledgeDocument,
@@ -68,7 +69,7 @@ async def complete(sessions, lease, pages, baseline):
                 KnowledgeCredential.source_id == source.id))
             if source.version != task.source_version or (credential_version or 0) != task.credential_version:
                 blocked = "source_changed"
-            if not settings.KNOWLEDGE_ENABLED:
+            if not await knowledge_enabled(db):
                 blocked = "service_disabled"
         except HTTPException:
             blocked = "source_unavailable"

@@ -15,7 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.deps import get_db
 from app.schemas.knowledge import KnowledgeRead, KnowledgeSearch
-from app.services.knowledge.access import KnowledgePrincipal, knowledge_principal
+from app.services.knowledge.access import (
+    KnowledgePrincipal, knowledge_agent_principal, knowledge_principal, request_address,
+)
 from app.services.knowledge.retrieval import queries, session
 
 REQUEST_SECONDS = 5
@@ -75,13 +77,23 @@ async def address_quota(request: Request) -> None:
     """
     使用 ASGI 连接身份限制匿名猜测，不信任客户端自报的转发头。
     """
-    address = request.client.host if request.client else "unknown"
+    address = request_address(request)
     await session.quota("address:" + address, session.ADDRESS_PER_MINUTE)
 
 
 async def principal(identity: KnowledgePrincipal = Depends(knowledge_principal)) -> KnowledgePrincipal:
     """
     独立身份通过后使用共享客户端配额；普通后台 Cookie 不参与授权。
+    """
+    await session.quota("client:" + identity.client_id, session.CLIENT_PER_MINUTE)
+    return identity
+
+
+async def agent_principal(
+    identity: KnowledgePrincipal = Depends(knowledge_agent_principal),
+) -> KnowledgePrincipal:
+    """
+    对无配置 Agent 的公开检索使用单独配额，授权范围由 Server 发布状态决定。
     """
     await session.quota("client:" + identity.client_id, session.CLIENT_PER_MINUTE)
     return identity
@@ -105,5 +117,23 @@ async def read(payload: KnowledgeRead, identity: KnowledgePrincipal = Depends(pr
                 db: AsyncSession = Depends(get_db)):
     """
     按本客户端短期引用补读相邻上下文，再次检查当前 SQL 权限与发布状态。
+    """
+    return await queries.read(db, identity, payload.evidence_id)
+
+
+@router.post("/agent/search")
+async def agent_search(payload: KnowledgeSearch, identity: KnowledgePrincipal = Depends(agent_principal),
+                       db: AsyncSession = Depends(get_db)):
+    """
+    返回所有 MP Agent 可用的有限已发布知识，不要求用户预先签发访问令牌。
+    """
+    return await queries.search(db, identity, payload)
+
+
+@router.post("/agent/read")
+async def agent_read(payload: KnowledgeRead, identity: KnowledgePrincipal = Depends(agent_principal),
+                     db: AsyncSession = Depends(get_db)):
+    """
+    依据本连接签发的短期引用补读公共知识，再次检查发布与集合状态。
     """
     return await queries.read(db, identity, payload.evidence_id)

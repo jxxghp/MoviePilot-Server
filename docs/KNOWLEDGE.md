@@ -4,7 +4,7 @@
 
 ## 开关与权限
 
-KNOWLEDGE_ENABLED 默认 false，控制在线检索和执行器。管理员可在关闭状态下预先维护集合、站点、来源与草稿；保存配置不会发起网络采集。
+中心知识默认关闭。部署配置 `KNOWLEDGE_ENABLED` 可作为默认值；超级管理员还可在“权限与功能 → 中心知识”中设置在线总开关。后台显式开关覆盖部署默认，关闭后 Agent 公共检索、知识采集和索引任务暂停。启用后，所有 MoviePilot Agent 均可读取启用集合中已发布的知识，不需要用户登记客户端、填写 URL 或令牌；后台采集凭据不会返回给调用方。`KNOWLEDGE_TRUSTED_PROXY_ADDRESSES` 只应配置会覆盖写入 `X-Real-IP` 的可信反向代理 IP 或网段，默认信任回环和私有容器网络。关闭时仍可预先维护集合、站点、来源与草稿；保存来源配置不会发起网络采集。
 
 维护 API 位于 /admin/api/knowledge，使用现有后台会话、管理员角色和写操作 CSRF。响应禁止缓存。该入口不接受 MP 自报的 GitHub 用户名或实例 UID 代替后台认证。
 
@@ -38,7 +38,7 @@ KNOWLEDGE_ENABLED 默认 false，控制在线检索和执行器。管理员可�
 
 签发或轮换成功后，令牌只在独立窗口中显示一次，默认遮盖；关闭、切换分区或身份变化时清空。只有明确点击复制才写入剪贴板。令牌响应丢失时先核对当前版本，再明确重新轮换，不能找回旧值或自动重放。
 
-“检索测试”需自行提供独立知识令牌，固定调用同源 /knowledge/v1/search 和 /read，公开读取请求不携带后台 Cookie 或 CSRF。普通管理员也可用已获得的独立令牌测试，但不能管理授权。令牌失效只显示读取失败，不注销后台会话。问题、范围或身份变化会作废旧请求与证据；切换分区会清除令牌。界面展示有限原文、出处与状态，补读只使用本次短期引用；401 / 403 / 410 / 503 与没有匹配知识分别显示。
+“检索测试”仍可用独立知识令牌调用 `/knowledge/v1/search` 和 `/read` 检查指定集合授权；Agent 则固定调用无需配置的 `/knowledge/v1/agent/search` 和 `/agent/read`。Agent 公共接口只返回启用集合中已发布的资料，并按连接地址限流；短期引用也绑定该地址。
 
 ## 基础维护接口
 
@@ -101,9 +101,9 @@ Bearer 认证每次读取当前客户端状态、有效期与集合开关；停�
 
 ## 只读检索协议
 
-入口为 POST /knowledge/v1/search 和 POST /knowledge/v1/read，要求 Authorization: Bearer 独立知识令牌。请求和响应均使用 protocol_version: 1。不接受后台 Cookie、自报 UID、任意抓取 URL、SQL、脚本或全集导出。API 和专用 Nginx 路径均禁止缓存。
+受限客户端入口为 POST `/knowledge/v1/search` 和 POST `/knowledge/v1/read`，要求 Authorization: Bearer 独立知识令牌。MoviePilot Agent 使用 POST `/knowledge/v1/agent/search` 和 POST `/knowledge/v1/agent/read`，不要求客户端账号或令牌，只能读取启用集合中的已发布资料。请求和响应均使用 protocol_version: 1。不接受后台 Cookie、自报 UID、任意抓取 URL、SQL、脚本或全集导出。API 和专用 Nginx 路径均禁止缓存。
 
-搜索请求示例（站点省略表示只检索通用知识，不猜测其他站点规则）：
+搜索请求示例（MP 查询可省略站点；PT 泛查包含通用知识与明确标注的站点示例）：
 
     {
       "protocol_version": 1,
@@ -115,11 +115,11 @@ Bearer 认证每次读取当前客户端状态、有效期与集合开关；停�
       "limit": 5
     }
 
-query 为最长 300 字符的独立问题，不发送整个聊天记录或原始日志；疑似凭据会拒绝，但启发式检查不能代替客户端脱敏。product 为宿主确定的产品标识；product_version 为宿主当前稳定版本，未知或开发版本传 null，不能让模型猜版本。domain 可选 mp / pt；site 可用后台维护的站点名称、域名或别名；未知和未授权站点返回同一说明，不暴露隐藏站点名单。明确站点时可同时返回通用材料，若没有本站专属命中会提示 no_site_specific_match。
+query 为最长 300 字符的独立问题，不发送整个聊天记录或原始日志；疑似凭据会拒绝，但启发式检查不能代替客户端脱敏。product 为宿主确定的产品标识；product_version 为宿主当前稳定版本，未知或开发版本传 null，不能让模型猜版本。domain 可选 mp / pt；site 可用后台维护的站点名称、域名或别名。明确站点时可同时返回通用材料。PT 未知或未指定站点时也会检索带站点名称的参考示例，并附 `pt_site_examples_only`；调用方须把示例当例子，不能自动推广为目标站点已核验的规则。未知 PT 站点还会附 `unknown_or_unavailable_site`，不暴露站点清单。
 
 purpose 可选 usage、troubleshooting、development，默认 usage。常规问题优先指南，排除明确测试路径；development 可返回实现与测试，但测试标记 test_reference_only，不能直接当成使用规则。分类依据来源路径，不是语义真实性保证。中文双字、英文配置名和少量受控同义词用于词法检索，输入永远是字面查询；当前没有向量检索或中心聊天模型，命中也不保证足以回答问题。
 
-响应包含 request_id、corpus_revision、status、evidence、notices、retention: ephemeral、content_trust: reference_only。每篇文档最多一个片段，最多五篇，每段最多 1600 字符，单次搜索正文总量最多 6000 字符。各证据含标题、出处、源修订、产品 / 站点、版本范围、真实采集时间和时效说明；未知范围或时间保持未知，不能拿中心入库时间代替。产品、版本、站点和内容类型先于有限候选截断过滤；返回正文前再用 SQL 当前发布指针、启停和授权核对。
+响应包含 request_id、corpus_revision、status、evidence、notices、retention: ephemeral、content_trust: reference_only。每篇文档最多一个片段，最多五篇，每段最多 1600 字符，单次搜索正文总量最多 6000 字符。各证据含标题、出处、源修订、产品 / 站点（站点级资料带 `site_name`）、版本范围、真实采集时间和时效说明；未知范围或时间保持未知，不能拿中心入库时间代替。产品、版本、站点和内容类型先于有限候选截断过滤；返回正文前再用 SQL 当前发布指针和启停状态核对。
 
 | 结果 | 含义与调用方处理 |
 | --- | --- |
@@ -135,7 +135,7 @@ purpose 可选 usage、troubleshooting、development，默认 usage。常规问�
 
 资料新旧代次不一致时，若还能找到经过 SQL 复核的证据会附 index_updating；找不到时返回 503 knowledge_index_updating，等待执行器重建后再试。旧格式快照也明确返回 503；升级后通过后台 jobs/index 手动请求重建，并运行 worker，不在在线请求中重建。
 
-每项证据带短期随机 evidence_id，补读只接受 {"protocol_version":1,"evidence_id":"搜索返回值"}。引用绑定客户端及其并发版本，十分钟自动到期；补读不延长有效期，reference_seconds 表示签发时的期限。Redis 只保存引用摘要键、主体、文档修订和字符位置、产品 / 版本 / 站点范围，不保存查询、标题或正文。补读从当前 SQL 发布修订读取原片段周围最多 4000 字符，不能任意指定文档或偏移，旧快照退役后仍能验证当前有效引用。换钥、编辑客户端范围或新发布修订后，旧引用需要重新搜索。
+每项证据带短期随机 evidence_id，补读只接受 {"protocol_version":1,"evidence_id":"搜索返回值"}。受限客户端引用绑定客户端版本，Agent 公共引用绑定连接地址摘要，均十分钟自动到期；补读不延长有效期，reference_seconds 表示签发时的期限。Redis 只保存引用摘要键、主体摘要、文档修订和字符位置、产品 / 版本 / 站点范围，不保存查询、标题或正文。补读从当前 SQL 发布修订读取原片段周围最多 4000 字符，不能任意指定文档或偏移，旧快照退役后仍能验证当前有效引用。更新授权或发布新修订后，旧引用需要重新搜索。
 
 证据始终是不可信的参考数据；正文中的提示词、命令和“忽略指令”等内容不能获得工具权限。Agent 接入时必须仅作本轮临时证据，不原样写入长期记忆、学习库、复盘摘要或持久化工具轨迹；本接口的 ephemeral 提示本身不能替代宿主的留存控制。
 
