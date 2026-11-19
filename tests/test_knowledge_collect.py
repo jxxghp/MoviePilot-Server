@@ -477,6 +477,32 @@ def test_nexus_rules_exclude_account_navigation_but_keep_article_headings(select
     ))
 
 
+def test_nexus_faq_deduplicates_nested_cells_before_counting_article_roots():
+    """常见 FAQ 的六十个嵌套单元格只是一篇正文，表格内容保留且账号栏仍排除。"""
+    body = ('<table class="mainouter"><tr><td class="embedded">'
+            '<div id="info_block">synthetic-account-private</div><h2>常见问题</h2>'
+            '<table><tr><th>问题</th><th>做种时间</th></tr>' + ''.join(
+                '<tr><td class="embedded">FAQ-' + str(index) + '</td><td class="embedded">24 hours</td></tr>'
+                for index in range(60)) + '</table></td></tr></table>').encode()
+    result = network.FetchResult(200, "https://docs.example/faq", "text/html", body, charset="utf-8")
+    origin = type("Source", (), {"selector": "", "connector": "nexusphp"})()
+    parsed = parsing.document(result, origin, "synthetic")
+    assert parsed["title"] == "常见问题"
+    assert all(parsed["content"].count("| FAQ-" + str(index) + " |") == 1 for index in range(60))
+    assert "| 问题 | 做种时间 |" in parsed["content"]
+    assert "synthetic-account-private" not in parsed["content"]
+
+
+def test_parser_still_rejects_too_many_independent_article_roots():
+    """独立的五十一篇正文仍然超过上限，不能用去重变相放宽页面结构限制。"""
+    result = network.FetchResult(200, "https://docs.example/faq", "text/html",
+                                (('<article>' + TEXT + '</article>') * 51).encode(), charset="utf-8")
+    origin = type("Source", (), {"selector": "", "connector": "nexusphp"})()
+    with pytest.raises(NetworkError) as error:
+        parsing.document(result, origin, "synthetic")
+    assert error.value.code == "document_structure_large"
+
+
 @pytest.mark.parametrize("connector", ["http", "nexusphp"])
 def test_article_header_is_content_while_page_header_is_navigation(connector):
     """文章内标题保留语义，页面级 header 和已知账号容器仍被排除。"""

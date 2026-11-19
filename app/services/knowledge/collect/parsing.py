@@ -72,10 +72,11 @@ def html_document(result, source):
             roots = soup.select("main, article, .markdown-body, .contents, #content, .content")
         if not roots:
             raise NetworkError("document_selector_empty")
-        if len(roots) > 50:
-            raise NetworkError("document_structure_large")
         identities = {id(root) for root in roots}
         roots = [root for root in roots if not any(id(parent) in identities for parent in root.parents)]
+        # NexusPHP FAQ 的外层正文已包含大量嵌套单元格；去掉重复子树后再限制独立正文数量。
+        if len(roots) > 50:
+            raise NetworkError("document_structure_large")
         selected = BeautifulSoup("".join(str(root) for root in roots), "html.parser")
         if selected.select_one('input[type="password"],form[action*="login"]'):
             raise NetworkError("authentication_page")

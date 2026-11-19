@@ -172,6 +172,21 @@ worker 每轮在 SQL 当前指针锁内回收中心管理的旧快照：始终�
 
 可选 PostgreSQL 合同测试通过 KNOWLEDGE_TEST_DATABASE_URL 显式指定本机 knowledge_test 专用数据库。每个案例使用随机 schema 并在结束后删除，拒绝使用其他数据库名；未提供配置时明确跳过，不把方言编译当作数据库集成测试。
 
+### 对明确批准的来源执行自动审阅
+
+采集默认只生成待审修订。维护者可以在中心私有卷保存批准清单，再通过运维命令审阅这些来源的后续更新。该命令默认只预览，显式传入 `--apply` 才会调用正式发布服务、记录审计并排队索引：
+
+    python -m app.services.knowledge.review --config /config/knowledge/ops/approved-sources.json
+    python -m app.services.knowledge.review --config /config/knowledge/ops/approved-sources.json --apply
+
+配置文件及其目录须仅属主可访问，文件不得为符号链接；清单和知识正文、Cookie 一样保留在中心私有卷，不提交到仓库或镜像。顶层 `sources` 数组每项包含来源 `id`、`binding`、`policy`、可选 `allowed_flags`。`binding` 通过 `app.services.knowledge.network.policy.binding(source)` 对所审阅的当前来源计算；`policy` 是该来源采集窗口返回的明确版本策略。批准前须核对集合、站点、目标 URL / 仓库、路径和正文选择器，不能只凭来源名称选择。
+
+不指定 `allowed_flags` 时，任何采集警告都留待审；仅支持明确允许 `content_instruction`，其正文仍是不执行的参考数据。疑似秘密不能通过清单放行。来源身份或策略变化后，旧批准失效；同范围 Cookie 轮换则需要新的真实采集回执确认正文。只批准真实采集任务写入的当前待审 head，不批准手工或导入修订、已撤回内容、受保护候选、已取消或失败的任务。
+
+命令检查空白或过短正文、登录 / 错误页、个人统计、异常大幅替换，并重新核对来源、集合、站点和在线开关。已发布版本保留至新修订通过审阅；检查仅为有限启发式规则，不判断所有语义错误。每轮默认最多检查 1000 篇，`--limit` 范围为 1–10000；输出只有计数和固定结果码，不包含正文、凭据或上游异常。
+
+需要定期维护时，可由中心系统任务每 15 分钟调用，并使用 `flock` 排除重叠运行。命令使用部署的 SQL 配置，不需要保存后台密码或会话。索引仍由独立知识 worker 构建。
+
 ## JSONL 预检与明确导入
 
 先建立 connector 为 jsonl 的来源，明确集合、产品与可选站点。上传使用原始 application/x-ndjson 正文，query 参数为 source_id 和当前 source_version，仍需 Cookie 和 X-CSRF-Token。不能上传 ZIP 或其他压缩体，不能指定文件系统路径。Nginx 专用入口最大 64 MiB，关闭请求缓冲并保留认证头；API 在认证后累计检查实际字节，不依赖 Content-Length。
