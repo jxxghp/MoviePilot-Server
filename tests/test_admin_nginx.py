@@ -30,6 +30,7 @@ class EchoBackend(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "public, max-age=900")
         self.send_header("X-Echo-Authorization", self.headers.get("Authorization", ""))
         self.send_header("X-Echo-Forwarded-For", self.headers.get("X-Forwarded-For", ""))
+        self.send_header("X-Echo-Real-IP", self.headers.get("X-Real-IP", ""))
         self.end_headers()
         self.wfile.write(self.path.encode())
 
@@ -63,6 +64,9 @@ def test_real_nginx_preserves_private_routes(tmp_path, prefix):
     thread.start()
     port = free_port()
     config = tmp_path / "nginx.conf"
+    realip = tmp_path / "cloudflare-realip.conf"
+    realip.write_text((Path(__file__).parents[1] / "docker/cloudflare-realip.conf").read_text())
+    blocks = [block.replace('/etc/nginx/cloudflare-realip.conf', str(realip)) for block in blocks]
     config.write_text(f'''
         daemon off;
         master_process off;
@@ -133,6 +137,71 @@ def test_real_nginx_preserves_private_routes(tmp_path, prefix):
         assert response.status == 308 and response.getheader("Location").endswith(f"/{prefix}/")
         response.read()
         connection.close()
+    finally:
+        process.terminate()
+        process.communicate(timeout=5)
+        backend.shutdown()
+        backend.server_close()
+        thread.join(timeout=2)
+
+
+@pytest.mark.parametrize("trusted", [False, True])
+@pytest.mark.parametrize("claimed", ["198.51.100.23", "2001:db8::23", ""])
+def test_knowledge_nginx_restores_only_trusted_proxy_addresses(tmp_path, trusted, claimed):
+    """真实代理只采纳受信连接的 CF 地址，直连伪造或缺少该头时保持实际连接地址。"""
+    nginx = shutil.which("nginx")
+    if not nginx:
+        pytest.skip("本机未安装 Nginx")
+    source = (Path(__file__).parents[1] / "docker/nginx.conf").read_text()
+    routes = re.findall(r"\t\tlocation \^~ /knowledge/(?:v1/agent/)? \{.*?\n\t\t\}", source, re.S)
+    assert len(routes) == 2
+    realip = tmp_path / "cloudflare-realip.conf"
+    realip.write_text(("set_real_ip_from 127.0.0.1;\n" if trusted else "") +
+                      (Path(__file__).parents[1] / "docker/cloudflare-realip.conf").read_text())
+    routes = [route.replace('/etc/nginx/cloudflare-realip.conf', str(realip)) for route in routes]
+    backend = ThreadingHTTPServer(("127.0.0.1", 0), EchoBackend)
+    thread = threading.Thread(target=backend.serve_forever, daemon=True)
+    thread.start()
+    port = free_port()
+    config = tmp_path / "nginx.conf"
+    config.write_text(f'''
+        daemon off;
+        master_process off;
+        pid {tmp_path}/nginx.pid;
+        error_log stderr;
+        events {{ worker_connections 32; }}
+        http {{
+            access_log off;
+            client_body_temp_path {tmp_path}/body;
+            proxy_temp_path {tmp_path}/proxy;
+            upstream moviepilot_server {{ server 127.0.0.1:{backend.server_port}; }}
+            server {{ listen 127.0.0.1:{port}; {''.join(routes)} }}
+        }}
+    ''')
+    result = subprocess.run([nginx, "-t", "-p", str(tmp_path), "-c", str(config)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    process = subprocess.Popen([nginx, "-p", str(tmp_path), "-c", str(config)],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    try:
+        for _attempt in range(50):
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=1):
+                    break
+            except OSError:
+                time.sleep(0.05)
+        else:
+            pytest.fail("隔离 Nginx 未启动")
+        for path in ("/knowledge/v1/agent/search", "/knowledge/v1/search"):
+            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+            connection.request("GET", path, headers={"CF-Connecting-IP": claimed, "X-Real-IP": "203.0.113.88",
+                                                     "X-Forwarded-For": "203.0.113.99"})
+            response = connection.getresponse()
+            assert response.status == 200
+            response.read()
+            expected = claimed if trusted and claimed else "127.0.0.1"
+            assert response.getheader("X-Echo-Real-IP") == expected
+            assert response.getheader("X-Echo-Forwarded-For") == expected
+            connection.close()
     finally:
         process.terminate()
         process.communicate(timeout=5)

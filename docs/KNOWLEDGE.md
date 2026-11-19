@@ -141,6 +141,8 @@ purpose 可选 usage、troubleshooting、development，默认 usage。常规问�
 
 JSON 请求体最多 8 KiB，不接受压缩体。Redis 共享固定窗口配额默认为每客户端每分钟 60 次、每连接地址每分钟 120 次；多 worker 共用，不缓存读取权限。Nginx 覆盖客户端自报的转发地址，部署若有上级反向代理，应仅对受信代理配置真实地址，不能信任任意 X-Forwarded-For。API 完整期限五秒；每进程最多四个真实 SQLite 查询线程，进度处理器限制约 2.5 秒，取消请求不会提前释放仍运行的线程容量。
 
+Cloudflare 代理部署还需将 `docker/cloudflare-realip.conf` 安装为 `/etc/nginx/cloudflare-realip.conf`，并同步知识路由中的 include。该文件仅信任 Cloudflare 公布的回源网段，再用其覆盖写入的 `CF-Connecting-IP` 恢复访客地址；直连请求自报的同名头不能改变身份。否则引用会绑定到可能变化的 CDN 回源地址，使同一用户的补读偶发返回 410，多个用户也会共享配额。维护者应随代理网络变化核对官方网段；使用其他反向代理时应按实际受信来源配置地址恢复。
+
 ## 批准发布与独立索引
 
 发布请求必须同时包含 expected_version 和明确的 revision。追加草稿不会自动发布，也不会改变原有发布版；发布前应查看目标修订。来源、集合及所属站点均须启用，才能批准发布。publish 响应的 index_pending 表示仍需构建；job.status 为 queued 不能当作已可检索。后台 status 的 generation 表示当前知识事实代次，active_generation 表示已激活快照代次，has_snapshot 只描述 SQL 是否存在快照指针，不代替文件可用性检查。

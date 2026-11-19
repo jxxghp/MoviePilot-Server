@@ -10,6 +10,7 @@ on:
       - tests/**
       - requirements-dev.txt
       - docker/nginx.conf
+      - docker/cloudflare-realip.conf
       - docker/Dockerfile
       - .github/workflows/build.yml
       - requirements.txt
