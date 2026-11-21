@@ -140,11 +140,12 @@ def test_cookiecloud_preserves_upload_pull_preflight_and_privacy(tmp_path):
         body = json.dumps({"uuid": "synthetic-secret", "encrypted": "synthetic-encrypted-value"})
         status, headers, _ = request(port, "/cookiecloud/update", "POST", body=body)
         assert status == 200 and backend.received[-1][2].decode() == body
-        for method in ("GET", "HEAD", "POST"):
-            path = "/cookiecloud/get/synthetic-secret.js?password=synthetic-secret-query"
+        for index, method in enumerate(("GET", "HEAD", "POST")):
+            path = f"/cookiecloud/get/synthetic-secret-{method}.js?password=synthetic-secret-query"
+            address = f"2001:db8::{index + 7}"
             payload = '{"password":"synthetic-secret-body"}' if method == "POST" else None
             status, headers, data = request(port, path, method, body=payload, headers={
-                "CF-Connecting-IP": "2001:db8::7", "X-Real-IP": "198.51.100.9",
+                "CF-Connecting-IP": address, "X-Real-IP": "198.51.100.9",
                 "X-Forwarded-For": "198.51.100.8", "Cookie": "synthetic-secret-cookie"})
             assert status == 200 and headers["Cache-Control"] == "no-store"
             assert headers["Access-Control-Allow-Origin"] == "*"
@@ -152,7 +153,7 @@ def test_cookiecloud_preserves_upload_pull_preflight_and_privacy(tmp_path):
             assert data == (b"" if method == "HEAD" else b'{"encrypted":"synthetic-ciphertext"}')
             observed = backend.received[-1]
             assert observed[:2] == (method, path)
-            assert observed[3]["X-Real-IP"] == observed[3]["X-Forwarded-For"] == "2001:db8::7"
+            assert observed[3]["X-Real-IP"] == observed[3]["X-Forwarded-For"] == address
         entries = [json.loads(line) for line in logfile.read_text().splitlines()]
         assert {entry["operation"] for entry in entries} == {"pull", "update"}
         assert "synthetic-secret" not in logfile.read_text()
@@ -165,25 +166,24 @@ def test_cookiecloud_key_limit_covers_methods_encoding_and_rotating_ips(tmp_path
         for index, method in enumerate(("GET", "POST", "HEAD", "GET", "POST", "HEAD", "GET")):
             path = "/cookiecloud/GET/synthetic-secret" if index % 2 else "/cookiecloud/get/synthetic-%73ecret"
             status, headers, _ = request(port, path, method, headers={"CF-Connecting-IP": f"198.51.100.{index + 1}"})
-            assert status == (200 if index < 6 else 429)
-        assert len(backend.received) == 6
+            assert status == (200 if index == 0 else 429)
+        assert len(backend.received) == 1
         assert headers["Retry-After"] == "60" and headers["Cache-Control"] == "no-store"
         assert headers["Access-Control-Allow-Origin"] == "*"
-        assert request(port, "/cookiecloud/get/another-key", headers={"CF-Connecting-IP": "198.51.100.7"})[0] == 200
+        assert request(port, "/cookiecloud/get/another-key", headers={"CF-Connecting-IP": "198.51.100.8"})[0] == 200
 
 
 def test_cookiecloud_normalizes_basename_aliases_and_preserves_query_encoding(tmp_path):
     """代理和 KEY 限流使用同一规范化路径，编码分隔符与点段不能借用 basename 绕过配额。"""
     with gateway(tmp_path) as (port, backend, logfile):
-        for index in range(6):
-            assert request(port, "/cookiecloud/get/synthetic-secret", headers={"CF-Connecting-IP": f"198.51.100.{index + 1}"})[0] == 200
+        assert request(port, "/cookiecloud/get/synthetic-secret", headers={"CF-Connecting-IP": "198.51.100.1"})[0] == 200
         # 原始 URI 若转给 Express，prefix%2fsecret 会被 basename() 当成 secret 拉取。
-        for path in ("/cookiecloud/get/prefix%2fsynthetic-secret", "/%63ookiecloud/get/prefix%2Fsynthetic-secret"):
-            status, headers, _data = request(port, path)
+        for index, path in enumerate(("/cookiecloud/get/prefix%2fsynthetic-secret", "/%63ookiecloud/get/prefix%2Fsynthetic-secret")):
+            status, headers, _data = request(port, path, headers={"CF-Connecting-IP": f"198.51.100.{index + 2}"})
             assert status == 404 and headers["Cache-Control"] == "no-store"
         assert backend.received[-1][1] == "/cookiecloud/get/prefix/synthetic-secret"
-        assert request(port, "/cookiecloud/get/..%2Fget%2Fsynthetic-secret")[0] == 429
-        assert request(port, "/cookiecloud/get/another-key?data=%2f")[0] == 200
+        assert request(port, "/cookiecloud/get/..%2Fget%2Fsynthetic-secret", headers={"CF-Connecting-IP": "198.51.100.4"})[0] == 429
+        assert request(port, "/cookiecloud/get/another-key?data=%2f", headers={"CF-Connecting-IP": "198.51.100.5"})[0] == 200
         assert backend.received[-1][1] == "/cookiecloud/get/another-key?data=%2f"
         assert "synthetic-secret" not in logfile.read_text()
 
@@ -197,8 +197,8 @@ def test_cookiecloud_trusts_only_cloudflare_for_client_limit(tmp_path, trusted, 
             claimed = f"2001:db8::{index + 1}" if ipv6 else f"198.51.100.{index + 1}"
             status, _headers, _ = request(port, f"/cookiecloud/get/key-{index}", headers={
                 "CF-Connecting-IP": claimed, "X-Forwarded-For": claimed, "X-Real-IP": claimed})
-            assert status == (429 if not trusted and index == 11 else 200)
-        assert len(backend.received) == (12 if trusted else 11)
+            assert status == (429 if not trusted and index > 0 else 200)
+        assert len(backend.received) == (12 if trusted else 1)
         if not trusted:
             assert {json.loads(line)["ip"] for line in logfile.read_text().splitlines()} == {"127.0.0.1"}
 
@@ -206,8 +206,8 @@ def test_cookiecloud_trusts_only_cloudflare_for_client_limit(tmp_path, trusted, 
 def test_cookiecloud_real_rejections_trigger_sanitized_alert(tmp_path):
     """请求真正被代理拒绝后，脱敏日志可直接触发异常访问告警。"""
     with gateway(tmp_path) as (port, _backend, logfile):
-        statuses = [request(port, f"/cookiecloud/get/missing-synthetic-secret-{index}")[0] for index in range(31)]
-        assert statuses.count(404) == 11 and statuses.count(429) == 20
+        statuses = [request(port, f"/cookiecloud/get/missing-synthetic-secret-{index}")[0] for index in range(21)]
+        assert statuses.count(404) == 1 and statuses.count(429) == 20
         monitor = Monitor()
         alerts = [alert for line in logfile.read_bytes().splitlines()
                   for alert in monitor.observe(line, time.time())]

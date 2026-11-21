@@ -164,6 +164,7 @@ services:
     cookiecloud-monitor:
         image: 'jxxghp/moviepilot-server:latest'
         container_name: cookiecloud-monitor
+        profiles: ['monitoring']
         command: ['python3', '-m', 'app.services.cookiecloud']
         environment:
             - COOKIECLOUD_ALERT_WEBHOOK=${COOKIECLOUD_ALERT_WEBHOOK:-}

@@ -5,8 +5,8 @@
 
 ## 限流
 
-- 每个真实来源 IP 平均每分钟 30 次请求，允许额外突发 10 次。
-- 同一 KEY 的拉取在所有 IP 之间共享每分钟 10 次配额，允许额外突发 5 次。
+- 每个真实来源 IP 每分钟 5 次请求，按至少 12 秒间隔放行，不允许突发。
+- 同一 KEY 的拉取在所有 IP 之间共享每分钟 1 次配额，至少间隔 60 秒，不允许突发。
   GET、HEAD、POST 等方法共用此配额，OPTIONS 预检不占用配额。
 - 超限返回 HTTP 429、`Retry-After: 60`，保留跨域响应头。所有响应禁止缓存。
 - 使用与 KEY 限流一致的规范化路径转发到上游，防止编码分隔符、点段与上游
@@ -17,7 +17,7 @@
   防止客户端绕过代理。Nginx 使用主机网络时可直接访问；采用独立容器网络时，
   应改为同一私有网络中的服务名，并取消 CookieCloud 的端口发布。
 
-修改配额时同时调整两个 `limit_req_zone` 和对应的 `burst`。多个客户端使用同一
+修改配额时调整两个 `limit_req_zone`，保持无 `burst` 以避免短时间连续拉取。多个客户端使用同一
 出口或同一 KEY 时共享配额，手动反复同步可能触发 429，等待一分钟后重试。
 
 ## 异常访问监控
@@ -26,6 +26,7 @@ Nginx 单独写入 `/var/log/nginx/cookiecloud-security.log`，每行只包含�
 操作分类、HTTP 状态和限流结果。KEY 位于请求路径中，因此此 location 禁用普通错误
 日志，使用上述脱敏状态记录监控故障；不记录请求路径、参数、请求头、正文或 Cookie。
 
+监控是可选功能，Compose 默认不启动；仅显式启用 `monitoring` profile 时部署。
 独立的 `cookiecloud-monitor` 容器读取此日志，不访问 CookieCloud 数据目录、SQL 或 Redis。
 最近五个分钟桶内达到以下阈值时输出 `cookiecloud_security_alert` WARNING：
 
@@ -59,18 +60,20 @@ Webhook URL 与失败响应正文不会输出。请把 URL 放在服务器私有
    如果 Nginx 运行在容器中，将其 `/var/log/nginx` 挂载到主机专用目录，设置
    `COOKIECLOUD_LOG_DIR` 指向该主机目录，供监控容器只读挂载。
 3. 执行实际 Nginx 实例的 `nginx -t`，通过后执行 `nginx -s reload`。
-4. 合并线上 Compose 中 CookieCloud 的本机端口绑定和 `cookiecloud-monitor` 服务。
+4. 合并线上 Compose 中 CookieCloud 的本机端口绑定。默认仅更新服务端和 CookieCloud，
+   不部署监控程序。
    在配置目录中执行：
 
    ```bash
-   docker compose pull cookiecloud-monitor
-   docker compose up -d --no-deps cookiecloud cookiecloud-monitor
-   docker compose exec cookiecloud-monitor python3 -m app.services.cookiecloud --once
-   docker compose logs --tail 50 cookiecloud-monitor
+   docker compose pull moviepilot-server
+   docker compose up -d --no-deps moviepilot-server cookiecloud
    ```
 
-   缺少日志或无权限时单次检查返回非零，常驻进程输出错误并等待恢复。确认 8088 仅监听
-   本机；使用专用测试 KEY 验证上传和拉取，避免在命令行、终端记录中使用真实 KEY/密码。
+   确认 8088 仅监听本机；使用专用测试 KEY 验证上传和拉取，避免在命令行、终端记录中
+   使用真实 KEY/密码。需要告警时，再单独执行
+   `docker compose --profile monitoring up -d --no-deps cookiecloud-monitor`；用
+   `docker compose exec cookiecloud-monitor python3 -m app.services.cookiecloud --once` 检查日志挂载，
+   缺少日志或无权限时返回非零。
 5. 为脱敏日志配置 logrotate：建议 `daily`、`maxsize 10M`、`rotate 7`、`compress`、
    `delaycompress`、`missingok`、`notifempty`，轮转后对实际 Nginx 执行 `nginx -s reopen`。
    日志属主/权限应允许 Nginx 写入、监控读取。不要把普通包含请求 URI 的日志交给监控。
