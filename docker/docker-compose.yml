@@ -172,6 +172,7 @@ services:
     wiki:
         image: 'ghcr.io/requarks/wiki:2.5'
         container_name: wiki
+        init: true
         environment:
             DB_TYPE: sqlite
             DB_FILEPATH: /config/wiki.db
