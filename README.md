@@ -88,6 +88,9 @@ PostgreSQL、Redis 和服务端的完整编排示例见 [docker/docker-compose.y
 
 生产环境建议使用 PostgreSQL 和 Redis，并通过反向代理启用 TLS。该服务只应接收 MoviePilot 约定的数据，不要通过分享或统计接口上传敏感内容。
 
+公共 CookieCloud 的来源 IP/KEY 限流、脱敏异常访问告警及部署步骤见
+[CookieCloud 防护文档](docs/COOKIECLOUD.md)。Nginx 配置需单独更新，镜像更新不会自动启用代理防护。
+
 ## 本地开发
 
 ```bash

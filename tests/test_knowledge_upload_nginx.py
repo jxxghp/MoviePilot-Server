@@ -115,9 +115,12 @@ def test_real_nginx_streams_private_upload_before_body_complete(tmp_path):
         if connection:
             connection.close()
         process.terminate()
-        process.wait(timeout=5)
-        if process.stderr:
-            process.stderr.close()
+        try:
+            # 排空管道，避免 Nginx 退出日志阻塞；异常退出也回收测试自建的进程。
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate(timeout=5)
         backend.shutdown()
         backend.server_close()
         thread.join(timeout=2)

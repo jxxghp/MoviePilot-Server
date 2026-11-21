@@ -155,9 +155,29 @@ services:
         ports:
             - target: 8088
               published: 8088
+              host_ip: 127.0.0.1
               protocol: tcp
         volumes:
             - '/mnt/cookiecloud:/data/api/data'
+        restart: always
+
+    cookiecloud-monitor:
+        image: 'jxxghp/moviepilot-server:latest'
+        container_name: cookiecloud-monitor
+        command: ['python3', '-m', 'app.services.cookiecloud']
+        environment:
+            - COOKIECLOUD_ALERT_WEBHOOK=${COOKIECLOUD_ALERT_WEBHOOK:-}
+        volumes:
+            - '${COOKIECLOUD_LOG_DIR:-/var/log/nginx}:/logs:ro'
+        read_only: true
+        cap_drop: [ALL]
+        security_opt:
+            - no-new-privileges:true
+        logging:
+            driver: json-file
+            options:
+                max-size: "10m"
+                max-file: "5"
         restart: always
 
     ocr:
