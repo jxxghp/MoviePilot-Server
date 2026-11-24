@@ -12,6 +12,12 @@ const metrics = computed(() => [
   { label: '累计安装实例', value: data.value?.usage.total_users }, { label: '今日活跃', value: data.value?.usage.active_users.today },
   { label: '近 7 天活跃', value: data.value?.usage.active_users.last_7_days }, { label: '近 30 天活跃', value: data.value?.usage.active_users.last_30_days },
 ])
+const knowledgeMetrics = computed(() => [
+  { label: '知识累计调用', value: data.value?.knowledge?.total_calls },
+  { label: '今日知识调用', value: data.value?.knowledge?.today_calls },
+  { label: '累计命中人次', value: data.value?.knowledge?.total_hits },
+  { label: '已命中知识篇数', value: data.value?.knowledge?.hit_documents },
+])
 /** 总览展示真实聚合数据，刷新失败时保留重试入口。 */
 async function load() { loading.value = true; error.value = ''; try { data.value = await api('/overview') } catch (reason) { error.value = (reason as Error).message } finally { loading.value = false } }
 onMounted(load)
@@ -22,6 +28,18 @@ onMounted(load)
     <div v-if="error" role="alert" class="my-8 flex items-center justify-between rounded-md border border-destructive/30 p-4 text-sm text-destructive">{{ error }}<Button variant="outline" @click="load">重试</Button></div>
     <div class="my-10 grid grid-cols-2 gap-y-7 sm:my-12 xl:grid-cols-4"><div v-for="(item, i) in metrics" :key="item.label" class="px-4 first:pl-0 sm:px-7" :class="i ? 'border-l' : ''"><p class="mb-3 text-sm text-muted-foreground">{{ item.label }}</p><Skeleton v-if="loading && !data" class="h-11 w-28" /><p v-else class="text-3xl font-semibold tracking-tight tabular-nums sm:text-[2.6rem]">{{ number(item.value) }}</p></div></div>
     <div class="border-t py-8"><Versions v-if="data" :backend="data.usage.backend_versions" :frontend="data.usage.frontend_versions" :ios="data.usage.ios_app_versions ?? []" /><Skeleton v-else class="h-52 w-full" /></div>
+    <section v-if="data?.knowledge" class="border-t py-8">
+      <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <h2 class="text-xl font-semibold tracking-tight">知识中心使用</h2>
+        <Button as-child variant="ghost" size="sm"><RouterLink to="/knowledge?view=usage">查看命中排行与明细<ChevronRight class="ml-1 size-4" /></RouterLink></Button>
+      </div>
+      <div class="grid grid-cols-2 gap-y-6 xl:grid-cols-4">
+        <div v-for="(item, i) in knowledgeMetrics" :key="item.label" class="px-4 first:pl-0 sm:px-7" :class="i ? 'border-l' : ''">
+          <p class="mb-2 text-sm text-muted-foreground">{{ item.label }}</p>
+          <p class="text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">{{ number(item.value) }}</p>
+        </div>
+      </div>
+    </section>
     <section class="border-t pt-8"><div class="mb-6 flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold tracking-tight">最近共享</h2><div class="flex gap-2"><Button as-child variant="ghost" size="sm"><RouterLink to="/shares?tab=subscribe-shares">订阅分享</RouterLink></Button><Button as-child variant="ghost" size="sm"><RouterLink to="/shares?tab=workflow-shares">工作流分享</RouterLink></Button></div></div>
       <Table><TableHeader><TableRow class="bg-muted/50"><TableHead>名称</TableHead><TableHead>类型</TableHead><TableHead>作者</TableHead><TableHead>创建时间</TableHead><TableHead class="text-right">复用次数</TableHead><TableHead class="text-right">操作</TableHead></TableRow></TableHeader><TableBody><TableRow v-for="item in data?.recent_shares || []" :key="`${item.resource}/${item.id}`"><TableCell class="max-w-64 truncate font-medium">{{ item.share_title }}</TableCell><TableCell><Badge variant="secondary">{{ item.resource === 'subscribe-shares' ? '订阅' : '工作流' }}</Badge></TableCell><TableCell>{{ item.share_user || '—' }}</TableCell><TableCell class="whitespace-nowrap text-muted-foreground">{{ date(item.date) }}</TableCell><TableCell class="text-right tabular-nums">{{ number(item.count) }}</TableCell><TableCell class="text-right"><Button as-child variant="ghost" size="sm"><RouterLink :to="{path: '/shares', query: {tab: item.resource, detail: item.id}}">查看详情<ChevronRight class="ml-1 size-4" /></RouterLink></Button></TableCell></TableRow><TableRow v-if="!data?.recent_shares?.length"><TableCell :colspan="6" class="h-28 text-center text-muted-foreground">{{ loading ? '正在加载…' : '暂无共享内容' }}</TableCell></TableRow></TableBody></Table>
     </section>

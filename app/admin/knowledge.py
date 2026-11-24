@@ -3,6 +3,7 @@
 """
 
 import json
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -20,7 +21,7 @@ from app.schemas.knowledge import (
     CollectCandidateAction, CollectPolicy, ImportApproval, ImportPreflight, KnowledgePayload, PublicationAction,
     SitePayload, SiteUpdate, SourcePayload, SourceUpdate, SourceCredentialAction, SourceCredentialPayload, VersionAction,
 )
-from app.services.knowledge import access, catalog, documents, jobs
+from app.services.knowledge import access, catalog, documents, jobs, usage
 from app.services.knowledge import indexes
 from app.services.knowledge.imports import catalog as import_catalog, files as import_files
 from app.services.knowledge.credentials import catalog as credential_catalog
@@ -68,14 +69,23 @@ router = APIRouter(prefix="/knowledge", tags=["admin-knowledge"], route_class=Kn
 @router.get("/status")
 async def status(db: AsyncSession = Depends(get_db)):
     """
-    区分可维护草稿与尚未启用的在线知识服务，不展示来源正文。
+    区分可维护草稿与尚未启用的在线知识服务，同时返回轻量调用与命中汇总，不展示来源正文。
     """
     state = await db.get(KnowledgeState, "main")
     return {"enabled": await knowledge_enabled(db), "protocol_version": 1, "index": {
         "generation": state.generation if state else 0,
         "active_generation": state.active_generation if state else 0,
         "has_snapshot": bool(state and state.active_snapshot),
-    }}
+    }, "usage": await usage.status_counts(db)}
+
+
+@router.get("/usage")
+async def usage_summary(days: int = Query(14, ge=1, le=90), limit: int = Query(20, ge=1, le=100),
+                        db: AsyncSession = Depends(get_db)):
+    """
+    管理员查看知识服务累计调用次数、渠道分布、近期日趋势及各篇知识命中排行。
+    """
+    return await usage.summary(db, days=days, top_limit=limit)
 
 
 @router.get("/collections")
@@ -266,11 +276,12 @@ async def discard_collection_candidate(item_id: str, payload: VersionAction,
 @router.get("/documents")
 async def document_list(q: str = Query("", max_length=120), page: int = Query(1, ge=1),
                         size: int = Query(30, ge=1, le=100), source_id: str | None = Query(None, max_length=32),
+                        sort: Literal["updated_at", "hits"] = Query("updated_at"),
                         db: AsyncSession = Depends(get_db)):
     """
-    分页列出最新修订摘要，列表不包含正文。
+    分页列出最新修订摘要与命中统计，列表不包含正文。
     """
-    return await documents.list_documents(db, q, page, size, source_id)
+    return await documents.list_documents(db, q, page, size, source_id, sort=sort)
 
 
 @router.post("/documents", status_code=201)

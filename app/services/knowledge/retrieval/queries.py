@@ -15,7 +15,7 @@ from app.models.knowledge import (
     KnowledgeSite, KnowledgeSiteName, KnowledgeSource, KnowledgeState, new_identity,
 )
 from app.schemas.knowledge import KnowledgeSearch, normalized_name
-from app.services.knowledge import indexes
+from app.services.knowledge import indexes, usage
 from app.services.knowledge.checks import content_flags
 from app.services.knowledge.retrieval import session, storage
 
@@ -177,7 +177,21 @@ async def metadata(db, principal, spec, site_id, candidates) -> dict:
 
 async def search(db, principal, spec) -> dict:
     """
-    通过范围过滤、有限候选、实时 SQL 再核对后签发少量去重证据。
+    通过范围过滤、有限候选、实时 SQL 再核对后签发少量去重证据，并累加使用统计。
+    """
+    result = await _search(db, principal, spec)
+    await usage.record_search(
+        db,
+        public=principal.public,
+        status=result["status"],
+        document_ids=(item["document_id"] for item in result["evidence"]),
+    )
+    return result
+
+
+async def _search(db, principal, spec) -> dict:
+    """
+    执行实际范围过滤、有限候选与实时 SQL 复核，不产生统计副作用。
     """
     if "suspected_secret" in content_flags(spec.query + "\n" + (spec.site or "")):
         raise HTTPException(422, "knowledge_query_contains_sensitive_data")
@@ -290,7 +304,22 @@ async def search(db, principal, spec) -> dict:
 
 async def read(db, principal, identifier: str) -> dict:
     """
-    只补读原引用附近上下文，实时读取 SQL 发布修订，不依赖历史快照或任意偏移。
+    只补读原引用附近上下文，实时读取 SQL 发布修订，并累加补读统计。
+    """
+    result = await _read(db, principal, identifier)
+    document_id = result["evidence"][0]["document_id"] if result["evidence"] else None
+    await usage.record_read(
+        db,
+        public=principal.public,
+        status=result["status"],
+        document_id=document_id,
+    )
+    return result
+
+
+async def _read(db, principal, identifier: str) -> dict:
+    """
+    执行实际短期引用解析与实时 SQL 补读，不产生统计副作用。
     """
     payload = await session.resolve(principal, identifier)
     try:

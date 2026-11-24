@@ -20,6 +20,7 @@ from app.models import (
 from app.models.admin import AdminAudit, AdminUser
 from app.models.mapping import MediaMapping
 from app.admin.schemas import MappingUpdatePayload
+from app.services.knowledge import usage as knowledge_usage
 from app.services.plugin_rating import PluginRatingService
 from app.services.usage_statistic import UsageService
 
@@ -149,14 +150,18 @@ async def update_mapping(db: AsyncSession, item_id: int, payload: MappingUpdateP
 
 
 async def overview(db: AsyncSession) -> dict:
-    """聚合已有统计与最近共享；不伪造尚无历史快照的趋势数据。"""
+    """聚合已有统计、知识中心调用概况与最近共享；不伪造尚无历史快照的趋势数据。"""
     usage = await UsageService.get_statistics(db)
     recent = []
     for model, kind in ((SubscribeShare, "subscribe-shares"), (WorkflowShare, "workflow-shares")):
         rows = (await db.scalars(select(model).order_by(model.date.desc(), model.id.desc()).limit(4))).all()
         recent.extend({**serialize(row), "resource": kind} for row in rows)
     recent.sort(key=lambda row: row.get("date") or "", reverse=True)
-    return {"usage": usage, "recent_shares": recent[:4]}
+    return {
+        "usage": usage,
+        "knowledge": await knowledge_usage.status_counts(db),
+        "recent_shares": recent[:4],
+    }
 
 
 async def list_recognition(cursor: int, q: str) -> dict:

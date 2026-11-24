@@ -49,6 +49,8 @@ DATABASE_URL = os.environ.get("KNOWLEDGE_TEST_DATABASE_URL", "")
                  {"change": "grant"}, id="knowledge-revoke"),
     pytest.param(retrieval_tests.test_snapshot_retirement_preserves_active_uncertain_and_short_references,
                  {}, id="knowledge-retirement"),
+    pytest.param(retrieval_tests.test_usage_statistics_track_agent_and_client_calls_and_document_hits,
+                 {}, id="knowledge-usage"),
     pytest.param(credential_tests.test_roles_csrf_ciphertext_and_metadata_never_return_secret, {}, id="source-secrets"),
     pytest.param(credential_tests.test_rewrap_uses_new_nonce_and_active_key_and_rejects_tampering, {}, id="source-key-rotation"),
     pytest.param(credential_tests.test_two_real_connections_cannot_overwrite_credential_or_target, {}, id="source-secret-race"),

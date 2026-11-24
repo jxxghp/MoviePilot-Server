@@ -27,8 +27,29 @@ export interface Revision {
   min_version: string | null; max_version: string | null; source_url: string; source_commit: string
   fetched_at: string | null; valid_until: string | null; created_at: string; created_by: string
 }
+export interface DocumentUsage { search_hits: number; read_hits: number; total_hits: number; last_hit_at: string | null }
+export interface KnowledgeStatusUsage { total_calls: number; today_calls: number; total_hits: number; hit_documents: number }
+export interface KnowledgeUsageChannel {
+  total_calls: number; search_calls: number; search_matched_calls: number; search_hits: number; read_calls: number; read_hits: number
+}
+export interface KnowledgeUsageDaily extends KnowledgeUsageChannel { day: string }
+export interface KnowledgeTopDocument {
+  document_id: string; external_id: string; title: string; source_id: string; source_name: string; collection_name: string
+  domain: string; published_revision: number | null; search_hits: number; read_hits: number; total_hits: number; last_hit_at: string | null
+}
+export interface KnowledgeUsageSummary {
+  totals: {
+    total_calls: number; search_calls: number; search_matched_calls: number; search_hits: number
+    read_calls: number; read_hits: number; total_hits: number; hit_documents: number; published_documents: number
+  }
+  windows: { today_calls: number; last_7_days_calls: number; last_30_days_calls: number }
+  channels: { agent: KnowledgeUsageChannel; client: KnowledgeUsageChannel }
+  daily: KnowledgeUsageDaily[]
+  top_documents: KnowledgeTopDocument[]
+}
 export interface Document extends Omit<Entity, 'name' | 'enabled'> {
-  source_id: string; external_id: string; head_revision: number; published_revision: number | null; revision: Revision
+  source_id: string; external_id: string; head_revision: number; published_revision: number | null
+  usage?: DocumentUsage; revision: Revision
 }
 export interface Client extends Entity { expires_at: string | null; collection_ids: string[]; created_at: string }
 export interface IssuedClient extends Client { token: string }

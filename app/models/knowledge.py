@@ -394,3 +394,50 @@ class KnowledgeImportReceipt(Base):
     base_revision = Column(Integer, nullable=True)
     outcome = Column(String(16), nullable=False)
     flags = Column(Text, nullable=False, default="[]", comment="固定警告码，不保存被阻止的正文")
+
+
+class KnowledgeUsageDaily(Base):
+    """
+    按 UTC 自然日和调用渠道汇总的知识服务使用计数，不保存查询词、令牌或正文。
+    """
+
+    __tablename__ = "KNOWLEDGE_USAGE_DAILY"
+    __table_args__ = (
+        CheckConstraint("channel IN ('agent', 'client')", name="ck_knowledge_usage_daily_channel"),
+        CheckConstraint(
+            "search_calls >= 0 AND search_matched_calls >= 0 AND search_hits >= 0 "
+            "AND read_calls >= 0 AND read_hits >= 0",
+            name="ck_knowledge_usage_daily_counts",
+        ),
+        Index("ix_knowledge_usage_daily_day", "day"),
+    )
+
+    day = Column(String(10), primary_key=True, comment="UTC 统计日期 YYYY-MM-DD")
+    channel = Column(String(16), primary_key=True, comment="调用渠道：公共 Agent 或独立授权客户端")
+    search_calls = Column(Integer, nullable=False, default=0, comment="检索接口调用次数")
+    search_matched_calls = Column(Integer, nullable=False, default=0, comment="返回至少一条证据的检索次数")
+    search_hits = Column(Integer, nullable=False, default=0, comment="检索命中的知识条目人次")
+    read_calls = Column(Integer, nullable=False, default=0, comment="补读上下文接口调用次数")
+    read_hits = Column(Integer, nullable=False, default=0, comment="补读成功命中的次数")
+    updated_at = Column(String(40), nullable=False, default=timestamp, comment="最近统计更新时间")
+
+
+class KnowledgeDocumentUsage(Base):
+    """
+    单篇知识的累计命中统计，独立于文档乐观并发版本表以避免检索干扰编辑与发布。
+    """
+
+    __tablename__ = "KNOWLEDGE_DOCUMENT_USAGE"
+    __table_args__ = (
+        CheckConstraint(
+            "search_hits >= 0 AND read_hits >= 0 AND total_hits >= 0",
+            name="ck_knowledge_document_usage_counts",
+        ),
+        Index("ix_knowledge_document_usage_hits", "total_hits", "last_hit_at"),
+    )
+
+    document_id = Column(String(32), ForeignKey("KNOWLEDGE_DOCUMENT.id"), primary_key=True, comment="所属文档")
+    search_hits = Column(Integer, nullable=False, default=0, comment="在检索结果中被命中的次数")
+    read_hits = Column(Integer, nullable=False, default=0, comment="被补读相邻上下文命中的次数")
+    total_hits = Column(Integer, nullable=False, default=0, comment="累计命中次数")
+    last_hit_at = Column(String(40), nullable=True, comment="最近一次命中时间")

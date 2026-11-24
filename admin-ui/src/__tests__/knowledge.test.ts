@@ -8,6 +8,7 @@ import SourceSettings from '@/components/knowledge/SourceSettings.vue'
 import Catalog from '@/components/knowledge/Catalog.vue'
 import Documents from '@/components/knowledge/Documents.vue'
 import Jobs from '@/components/knowledge/Jobs.vue'
+import Usage from '@/components/knowledge/Usage.vue'
 
 const id = 'a'.repeat(32), parent = 'b'.repeat(32)
 const origin = { id, version: 7, name: '合成来源', connector: 'http' as const, enabled: true, collection_id: parent,
@@ -158,5 +159,61 @@ describe('审核与任务', () => {
     await vi.advanceTimersByTimeAsync(10000); expect(fetch).toHaveBeenCalledTimes(1)
     await wrapper.setProps({ enabled: true }); await vi.advanceTimersByTimeAsync(5000); expect(fetch).toHaveBeenCalledTimes(2)
     wrapper.unmount(); wrapper = undefined; await vi.advanceTimersByTimeAsync(15000); expect(fetch).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('知识使用统计与长标题防溢出', () => {
+  it('展示调用汇总、渠道分布、热门命中排行并支持跳转知识详情与切换天数', async () => {
+    const fetch = vi.fn(async (_path: string) => response({
+      totals: { total_calls: 42, search_calls: 30, search_matched_calls: 24, search_hits: 51, read_calls: 12, read_hits: 11, total_hits: 62, hit_documents: 9, published_documents: 20 },
+      windows: { today_calls: 6, last_7_days_calls: 25, last_30_days_calls: 42 },
+      channels: {
+        agent: { total_calls: 35, search_calls: 25, search_matched_calls: 20, search_hits: 43, read_calls: 10, read_hits: 9 },
+        client: { total_calls: 7, search_calls: 5, search_matched_calls: 4, search_hits: 8, read_calls: 2, read_hits: 2 },
+      },
+      daily: [{ day: '2026-11-24', total_calls: 6, search_calls: 5, search_matched_calls: 4, search_hits: 8, read_calls: 1, read_hits: 1 }],
+      top_documents: [{
+        document_id: id, external_id: 'page:3bfcdb1e7c5f5578103f2f8071131a7790fa0a3d08d84f164a4fb56f0b908628',
+        title: 'https://wiki.hhanclub.net/zh/%E7%AB%99%E7%82%B9%E8%A7%84%E5%88%99/%E5%AD%97%E5%B9%95%E8%A7%84%E5%88%99',
+        source_id: parent, source_name: '站点规则来源', collection_name: 'PT 规则', domain: 'pt',
+        published_revision: 1, search_hits: 15, read_hits: 5, total_hits: 20, last_hit_at: '2026-11-24T12:00:00+00:00',
+      }],
+    }))
+    vi.stubGlobal('fetch', fetch)
+    wrapper = mount(Usage, { attachTo: document.body }); await flushPromises()
+    expect(wrapper.text()).toContain('42'); expect(wrapper.text()).toContain('80%'); expect(wrapper.text()).toContain('62')
+    expect(wrapper.text()).toContain('公共 Agent 接口'); expect(wrapper.text()).toContain('独立授权客户端')
+    expect(wrapper.text()).toContain('2026-11-24')
+    const titleCell = wrapper.find('td.whitespace-normal')
+    expect(titleCell.exists()).toBe(true)
+    expect(titleCell.classes()).not.toContain('whitespace-nowrap')
+    button('查看与审核').click(); await nextTick()
+    expect(wrapper.emitted('document')).toEqual([[id]])
+    button('近 30 天').click(); await flushPromises()
+    expect(fetch.mock.calls.some(call => String(call[0]).includes('days=30'))).toBe(true)
+  })
+  it('知识列表显示命中次数、支持按命中排序并对超长无空格标题应用换行保护', async () => {
+    const longUrl = 'https://wiki.hhanclub.net/zh/%E7%AB%99%E7%82%B9%E8%A7%84%E5%88%99/%E5%AD%97%E5%B9%95%E5%8C%BA%E8%A7%84%E5%88%99'
+    const fetch = vi.fn(async (_path: string) => response({
+      items: [{
+        ...doc, published_revision: 1,
+        external_id: 'page:3bfcdb1e7c5f5578103f2f8071131a7790fa0a3d08d84f164a4fb56f0b908628',
+        usage: { search_hits: 7, read_hits: 2, total_hits: 9, last_hit_at: '2026-11-24T12:00:00+00:00' },
+        revision: { ...doc.revision, title: longUrl, state: 'published' },
+      }],
+      total: 1,
+    }))
+    vi.stubGlobal('fetch', fetch)
+    wrapper = mount(Documents, { attachTo: document.body }); await flushPromises()
+    expect(wrapper.text()).toContain('命中次数'); expect(wrapper.text()).toContain('9')
+    const titleCell = wrapper.find('tbody tr td')
+    expect(titleCell.classes()).toContain('whitespace-normal')
+    expect(titleCell.classes()).not.toContain('whitespace-nowrap')
+    const titleParagraph = titleCell.find('p')
+    expect(titleParagraph.attributes('title')).toBe(longUrl)
+    expect(titleParagraph.classes()).toContain('line-clamp-2')
+    const sortSelect = wrapper.find<HTMLSelectElement>('#knowledge-documents-sort')
+    await sortSelect.setValue('hits'); await flushPromises()
+    expect(fetch.mock.calls.some(call => String(call[0]).includes('sort=hits'))).toBe(true)
   })
 })

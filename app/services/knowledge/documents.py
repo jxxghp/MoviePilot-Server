@@ -10,10 +10,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.audit import record
-from app.models.knowledge import KnowledgeCollection, KnowledgeDocument, KnowledgeRevision, KnowledgeSite, KnowledgeSource
+from app.models.knowledge import (
+    KnowledgeCollection, KnowledgeDocument, KnowledgeDocumentUsage, KnowledgeRevision, KnowledgeSite, KnowledgeSource,
+)
 from app.schemas.knowledge import DocumentPayload, RevisionCreate, RevisionPayload
 from app.services.knowledge.catalog import commit, get_row, replace_values
-from app.services.knowledge import jobs
+from app.services.knowledge import jobs, usage
 
 REVISION_FIELDS = (
     "id", "number", "title", "content_hash", "product", "version_scope", "min_version", "max_version",
@@ -41,14 +43,16 @@ def revision_data(row: KnowledgeRevision, *, content: bool = False) -> dict:
     return item
 
 
-def document_data(row: KnowledgeDocument, revision: KnowledgeRevision, *, content: bool = False) -> dict:
+def document_data(row: KnowledgeDocument, revision: KnowledgeRevision, *, content: bool = False,
+                  hit: KnowledgeDocumentUsage | None = None) -> dict:
     """
-    文档当前版本与不可变修订分开返回，避免误报已发布。
+    文档当前版本、不可变修订与累计命中统计分开返回，避免误报已发布。
     """
     return {
         "id": row.id, "version": row.version, "source_id": row.source_id, "external_id": row.external_id,
         "head_revision": row.head_revision, "published_revision": row.published_revision,
         "created_at": row.created_at, "updated_at": row.updated_at,
+        "usage": usage.document_usage_data(hit),
         "revision": revision_data(revision, content=content),
     }
 
@@ -106,12 +110,14 @@ async def append_revision(db: AsyncSession, identity: str, payload: RevisionCrea
     await commit(db)
     await db.refresh(row)
     await db.refresh(revision)
-    return document_data(row, revision, content=True)
+    hit = await db.get(KnowledgeDocumentUsage, identity)
+    return document_data(row, revision, content=True, hit=hit)
 
 
-async def list_documents(db: AsyncSession, q: str, page: int, size: int, source_id: str | None) -> dict:
+async def list_documents(db: AsyncSession, q: str, page: int, size: int, source_id: str | None,
+                         sort: str = "updated_at") -> dict:
     """
-    分页展示最新草稿元数据，不通过列表传输整篇正文。
+    分页展示最新草稿元数据及命中次数，不通过列表传输整篇正文。
     """
     conditions = []
     if q:
@@ -120,17 +126,31 @@ async def list_documents(db: AsyncSession, q: str, page: int, size: int, source_
         conditions.append(KnowledgeDocument.source_id == source_id)
     join = (KnowledgeDocument.id == KnowledgeRevision.document_id) & (
         KnowledgeDocument.head_revision == KnowledgeRevision.number)
-    statement = select(KnowledgeDocument, KnowledgeRevision).join(KnowledgeRevision, join).where(*conditions)
-    total = await db.scalar(select(func.count()).select_from(statement.subquery()))
-    rows = (await db.execute(statement.order_by(KnowledgeDocument.updated_at.desc(), KnowledgeDocument.id)
-                             .offset((page - 1) * size).limit(size))).all()
-    return {"items": [document_data(document, revision) for document, revision in rows],
+    base_statement = select(KnowledgeDocument, KnowledgeRevision).join(KnowledgeRevision, join).where(*conditions)
+    total = await db.scalar(select(func.count()).select_from(base_statement.subquery()))
+    statement = select(KnowledgeDocument, KnowledgeRevision, KnowledgeDocumentUsage).join(
+        KnowledgeRevision, join,
+    ).outerjoin(
+        KnowledgeDocumentUsage, KnowledgeDocumentUsage.document_id == KnowledgeDocument.id,
+    ).where(*conditions)
+    if sort == "hits":
+        # 无命中记录统一视为 0 次与空时间，保证 SQLite 与 PostgreSQL 排序完全一致。
+        order = (
+            func.coalesce(KnowledgeDocumentUsage.total_hits, 0).desc(),
+            func.coalesce(KnowledgeDocumentUsage.last_hit_at, "").desc(),
+            KnowledgeDocument.updated_at.desc(),
+            KnowledgeDocument.id,
+        )
+    else:
+        order = (KnowledgeDocument.updated_at.desc(), KnowledgeDocument.id)
+    rows = (await db.execute(statement.order_by(*order).offset((page - 1) * size).limit(size))).all()
+    return {"items": [document_data(document, revision, hit=hit) for document, revision, hit in rows],
             "total": total or 0, "page": page, "size": size}
 
 
 async def read_document(db: AsyncSession, identity: str, number: int | None = None) -> dict:
     """
-    读取最新或明确历史修订，历史原文不会被新草稿替换。
+    读取最新或明确历史修订及该文档累计命中统计，历史原文不会被新草稿替换。
     """
     row = await get_row(db, KnowledgeDocument, identity)
     revision = await db.scalar(select(KnowledgeRevision).where(
@@ -138,7 +158,8 @@ async def read_document(db: AsyncSession, identity: str, number: int | None = No
     ))
     if revision is None:
         raise HTTPException(404, "知识修订不存在")
-    return document_data(row, revision, content=True)
+    hit = await db.get(KnowledgeDocumentUsage, identity)
+    return document_data(row, revision, content=True, hit=hit)
 
 
 async def publish_document(db: AsyncSession, identity: str, expected_version: int, number: int, actor: str) -> dict:
@@ -160,7 +181,8 @@ async def publish_document(db: AsyncSession, identity: str, expected_version: in
     if row.version != expected_version:
         raise HTTPException(409, "知识记录已被其他操作修改，请刷新后重试")
     if row.published_revision == number:
-        return {"document": document_data(row, revision), "job": None,
+        hit = await db.get(KnowledgeDocumentUsage, identity)
+        return {"document": document_data(row, revision, hit=hit), "job": None,
                 "index_pending": not state.active_snapshot or state.active_generation != state.generation}
     if row.published_revision is not None:
         previous = await db.scalar(select(KnowledgeRevision).where(
@@ -173,7 +195,8 @@ async def publish_document(db: AsyncSession, identity: str, expected_version: in
     job = await jobs.enqueue_index(db, actor)
     record(db, actor, "knowledge.document.publish", identity, {"revision": number})
     await db.refresh(row)
-    result = {"document": document_data(row, revision), "job": jobs.job_data(job), "index_pending": True}
+    hit = await db.get(KnowledgeDocumentUsage, identity)
+    result = {"document": document_data(row, revision, hit=hit), "job": jobs.job_data(job), "index_pending": True}
     await commit(db)
     return result
 
@@ -190,14 +213,15 @@ async def withdraw_document(db: AsyncSession, identity: str, expected_version: i
     revision = await db.scalar(select(KnowledgeRevision).where(
         KnowledgeRevision.document_id == identity, KnowledgeRevision.number == (number or row.head_revision),
     ))
+    hit = await db.get(KnowledgeDocumentUsage, identity)
     if number is None:
-        return {"document": document_data(row, revision), "job": None, "index_pending": False}
+        return {"document": document_data(row, revision, hit=hit), "job": None, "index_pending": False}
     revision.state = "withdrawn"
     await replace_values(db, row, expected_version, {"published_revision": None})
     await db.flush()
     job = await jobs.enqueue_index(db, actor)
     record(db, actor, "knowledge.document.withdraw", identity, {"revision": number})
     await db.refresh(row)
-    result = {"document": document_data(row, revision), "job": jobs.job_data(job), "index_pending": True}
+    result = {"document": document_data(row, revision, hit=hit), "job": jobs.job_data(job), "index_pending": True}
     await commit(db)
     return result

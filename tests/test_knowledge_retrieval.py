@@ -504,3 +504,105 @@ def test_query_terms_are_literals_and_synonyms_are_bounded(query, expected, abse
     assert expected in actual
     if absent:
         assert absent not in actual
+
+
+def test_usage_statistics_track_agent_and_client_calls_and_document_hits(monkeypatch, tmp_path):
+    """检索与补读会精确累加渠道调用和单篇知识命中，不改写文档并发版本且忽略无效调用。"""
+    async def scenario(client, sessions, _redis):
+        """覆盖公共 Agent、授权客户端、未命中、失败请求、按命中排序及统计异常容错。"""
+        headers = await login(client)
+        parent = await collection(client, headers, slug="usage-guide", domain="mp")
+        origin = await source(client, headers, parent, name="使用统计来源")
+        doc_a = await article(client, headers, origin, external_id="doc-a", title="高频指南",
+                              content="分享率与 DOWNLOAD_PATH 常用配置说明", version_scope="all")
+        doc_b = await article(client, headers, origin, external_id="doc-b", title="补充指南",
+                              content="分享率基础概念说明", version_scope="all")
+        doc_c = await article(client, headers, origin, external_id="doc-c", title="冷门指南",
+                              content="仅包含专属冷门词条 zzzrareterm", version_scope="all")
+        issued = await issue(client, headers, [parent["id"]])
+        await ready(monkeypatch, tmp_path, sessions)
+
+        initial_status = (await client.get(ROOT + "/status", headers=headers)).json()
+        assert initial_status["usage"] == {"total_calls": 0, "today_calls": 0, "total_hits": 0, "hit_documents": 0}
+        initial_usage = (await client.get(ROOT + "/usage", headers=headers)).json()
+        assert initial_usage["totals"]["total_calls"] == 0
+        assert initial_usage["totals"]["published_documents"] == 3
+        assert initial_usage["top_documents"] == []
+
+        # 1. 公共 Agent 检索命中 doc_a 和 doc_b
+        agent_hit = await agent_search(client, query="分享率", domain="mp")
+        assert agent_hit.status_code == 200
+        agent_evidence = agent_hit.json()["evidence"]
+        assert {item["document_id"] for item in agent_evidence} == {doc_a["id"], doc_b["id"]}
+        doc_a_ref = next(item["evidence_id"] for item in agent_evidence if item["document_id"] == doc_a["id"])
+
+        # 2. 公共 Agent 补读 doc_a
+        agent_expanded = await agent_read(client, doc_a_ref)
+        assert agent_expanded.status_code == 200 and agent_expanded.json()["status"] == "matched"
+
+        # 3. 公共 Agent 检索无匹配（计入 search_calls，但不增加命中）
+        agent_miss = await agent_search(client, query="不存在的词项 notfoundxyz", domain="mp")
+        assert agent_miss.status_code == 200 and agent_miss.json()["status"] == "no_match"
+
+        # 4. 独立授权客户端检索仅命中 doc_a
+        client_hit = await search(client, issued["token"], query="DOWNLOAD_PATH", domain="mp")
+        assert client_hit.status_code == 200
+        assert [item["document_id"] for item in client_hit.json()["evidence"]] == [doc_a["id"]]
+
+        # 5. 无效请求（未授权、含疑似敏感词、过期引用）不计入有效统计
+        assert (await search(client, "mpa_" + "a" * 43, query="分享率")).status_code == 401
+        assert (await search(client, issued["token"], query="token=secret-value-123456789")).status_code == 422
+        assert (await read(client, issued["token"], "ke_" + "z" * 43)).status_code == 410
+
+        summary = (await client.get(ROOT + "/usage", headers=headers, params={"days": 7, "limit": 10})).json()
+        assert summary["totals"] == {
+            "total_calls": 4,
+            "search_calls": 3,
+            "search_matched_calls": 2,
+            "search_hits": 3,
+            "read_calls": 1,
+            "read_hits": 1,
+            "total_hits": 4,
+            "hit_documents": 2,
+            "published_documents": 3,
+        }
+        assert summary["windows"] == {"today_calls": 4, "last_7_days_calls": 4, "last_30_days_calls": 4}
+        assert summary["channels"]["agent"] == {
+            "total_calls": 3, "search_calls": 2, "search_matched_calls": 1,
+            "search_hits": 2, "read_calls": 1, "read_hits": 1,
+        }
+        assert summary["channels"]["client"] == {
+            "total_calls": 1, "search_calls": 1, "search_matched_calls": 1,
+            "search_hits": 1, "read_calls": 0, "read_hits": 0,
+        }
+        assert len(summary["daily"]) == 1 and summary["daily"][0]["total_calls"] == 4
+        assert [item["document_id"] for item in summary["top_documents"]] == [doc_a["id"], doc_b["id"]]
+        assert summary["top_documents"][0]["search_hits"] == 2
+        assert summary["top_documents"][0]["read_hits"] == 1
+        assert summary["top_documents"][0]["total_hits"] == 3
+        assert summary["top_documents"][0]["last_hit_at"] is not None
+        assert summary["top_documents"][1]["total_hits"] == 1
+
+        # 状态接口与文档列表/详情同步反映命中统计，且不改动文档乐观并发版本
+        status_now = (await client.get(ROOT + "/status", headers=headers)).json()
+        assert status_now["usage"] == {"total_calls": 4, "today_calls": 4, "total_hits": 4, "hit_documents": 2}
+        ranked = (await client.get(ROOT + "/documents", headers=headers, params={"sort": "hits"})).json()["items"]
+        assert [item["id"] for item in ranked] == [doc_a["id"], doc_b["id"], doc_c["id"]]
+        assert [item["usage"]["total_hits"] for item in ranked] == [3, 1, 0]
+        detail_a = (await client.get(ROOT + "/documents/" + doc_a["id"], headers=headers)).json()
+        assert detail_a["version"] == doc_a["version"]
+        assert detail_a["usage"]["search_hits"] == 2 and detail_a["usage"]["read_hits"] == 1
+        assert detail_a["usage"]["total_hits"] == 3
+
+        # 统计写入偶发故障不能阻断已完成的知识检索
+        from sqlalchemy.exc import OperationalError
+        from app.services.knowledge import usage as usage_service
+
+        async def broken_upsert(*_args, **_kwargs):
+            """模拟统计表短暂不可用，验证主检索链路继续成功返回。"""
+            raise OperationalError("INSERT", {}, Exception("usage write failed"))
+
+        monkeypatch.setattr(usage_service, "_upsert_daily", broken_upsert)
+        resilient = await search(client, issued["token"], query="DOWNLOAD_PATH", domain="mp")
+        assert resilient.status_code == 200 and resilient.json()["status"] == "matched"
+    run_scenario(monkeypatch, scenario)
