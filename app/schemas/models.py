@@ -45,11 +45,15 @@ class PluginRatingResult(BaseModel):
     user_rating: Optional[float] = None
 
 
-class IOSUsageStatisticItem(BaseModel):
-    """iOS 匿名安装上报，仅接收安装 UUID 与发布版本。"""
+class AppUsageStatisticItem(BaseModel):
+    """移动端 App 匿名安装上报，仅接收安装 UUID 与发布版本。"""
 
     installation_id: UUID
     version: str = Field(min_length=1, max_length=64, pattern=r"^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$")
+
+
+class IOSUsageStatisticItem(AppUsageStatisticItem):
+    """iOS 匿名安装上报（与通用移动端匿名上报模型保持完全兼容）。"""
 
 
 class UsageStatisticItem(BaseModel):

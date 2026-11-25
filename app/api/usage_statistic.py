@@ -5,7 +5,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.deps import get_db
-from app.schemas.models import IOSUsageStatisticItem, UsageStatisticItem
+from app.schemas.models import (
+    AppUsageStatisticItem,
+    IOSUsageStatisticItem,
+    UsageStatisticItem,
+)
 from app.services.usage_statistic import UsageService
 
 router = APIRouter()
@@ -34,3 +38,15 @@ async def usage_statistic(db: AsyncSession = Depends(get_db)):
 async def ios_usage_report(usage: IOSUsageStatisticItem, db: AsyncSession = Depends(get_db)):
     """上报 iOS App 匿名安装与当前版本。"""
     return await UsageService.report_ios_usage(db, usage)
+
+
+@router.post("/android/report")
+async def android_usage_report(usage: AppUsageStatisticItem, db: AsyncSession = Depends(get_db)):
+    """上报 Android App 匿名安装与当前版本。"""
+    return await UsageService.report_android_usage(db, usage)
+
+
+@router.post("/harmony/report")
+async def harmony_usage_report(usage: AppUsageStatisticItem, db: AsyncSession = Depends(get_db)):
+    """上报 HarmonyOS App 匿名安装与当前版本。"""
+    return await UsageService.report_harmony_usage(db, usage)

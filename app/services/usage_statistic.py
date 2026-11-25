@@ -9,8 +9,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache_manager
-from app.models import IOSUsageStatistics, UsageStatistics
-from app.schemas.models import IOSUsageStatisticItem, UsageStatisticItem
+from app.models import (
+    AndroidUsageStatistics,
+    HarmonyUsageStatistics,
+    IOSUsageStatistics,
+    UsageStatistics,
+)
+from app.schemas.models import (
+    AppUsageStatisticItem,
+    IOSUsageStatisticItem,
+    UsageStatisticItem,
+)
 
 
 class UsageService:
@@ -108,12 +117,31 @@ class UsageService:
         return {"code": 0, "message": "success"}
 
     @staticmethod
-    async def report_ios_usage(db: AsyncSession, usage: IOSUsageStatisticItem) -> Dict[str, Any]:
-        """保存匿名 iOS 安装版本，不改变后端实例和活跃用户计数。"""
-        await IOSUsageStatistics.record(db, str(usage.installation_id), usage.version, UsageService._now())
+    async def _report_app_usage(
+            db: AsyncSession,
+            model_cls,
+            usage: AppUsageStatisticItem,
+    ) -> Dict[str, Any]:
+        """保存匿名移动端安装版本，不改变后端实例和活跃用户计数。"""
+        await model_cls.record(db, str(usage.installation_id), usage.version, UsageService._now())
         await db.commit()
         UsageService._invalidate_statistics_cache()
         return {"code": 0, "message": "success"}
+
+    @staticmethod
+    async def report_ios_usage(db: AsyncSession, usage: IOSUsageStatisticItem) -> Dict[str, Any]:
+        """保存匿名 iOS 安装版本，不改变后端实例和活跃用户计数。"""
+        return await UsageService._report_app_usage(db, IOSUsageStatistics, usage)
+
+    @staticmethod
+    async def report_android_usage(db: AsyncSession, usage: AppUsageStatisticItem) -> Dict[str, Any]:
+        """保存匿名 Android 安装版本，不改变后端实例和活跃用户计数。"""
+        return await UsageService._report_app_usage(db, AndroidUsageStatistics, usage)
+
+    @staticmethod
+    async def report_harmony_usage(db: AsyncSession, usage: AppUsageStatisticItem) -> Dict[str, Any]:
+        """保存匿名 HarmonyOS 安装版本，不改变后端实例和活跃用户计数。"""
+        return await UsageService._report_app_usage(db, HarmonyUsageStatistics, usage)
 
     @staticmethod
     async def get_statistics(db: AsyncSession) -> Dict[str, Any]:
@@ -152,6 +180,14 @@ class UsageService:
             "ios_app_versions": [
                 UsageService._normalize_version_count(row)
                 for row in await IOSUsageStatistics.list_version_counts(db)
+            ],
+            "android_app_versions": [
+                UsageService._normalize_version_count(row)
+                for row in await AndroidUsageStatistics.list_version_counts(db)
+            ],
+            "harmony_app_versions": [
+                UsageService._normalize_version_count(row)
+                for row in await HarmonyUsageStatistics.list_version_counts(db)
             ],
             "updated_at": UsageService._now(),
             "cache_ttl": 1800,

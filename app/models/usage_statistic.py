@@ -2,8 +2,9 @@
 安装版本统计模型
 """
 from sqlalchemy import Column, Integer, String, and_, func, or_, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import declared_attr
 
 from app.models.base import Base, get_id_column
 
@@ -122,16 +123,28 @@ class UsageStatistics(Base):
         return result.all()
 
 
-class IOSUsageStatistics(Base):
-    """按匿名 App 安装标识保存最新 iOS 版本，与后端实例数独立。"""
+class _AppUsageStatisticsMixin:
+    """按匿名 App 安装标识保存最新版本，与后端实例数独立。"""
 
-    __tablename__ = "IOS_USAGE_STATISTICS"
+    @declared_attr
+    def id(cls):
+        return get_id_column()
 
-    id = get_id_column()
-    installation_id = Column(String(36), unique=True, index=True, nullable=False)
-    version = Column(String(64), nullable=False, index=True)
-    first_seen_at = Column(String, nullable=False)
-    last_seen_at = Column(String, nullable=False, index=True)
+    @declared_attr
+    def installation_id(cls):
+        return Column(String(36), unique=True, index=True, nullable=False)
+
+    @declared_attr
+    def version(cls):
+        return Column(String(64), nullable=False, index=True)
+
+    @declared_attr
+    def first_seen_at(cls):
+        return Column(String, nullable=False)
+
+    @declared_attr
+    def last_seen_at(cls):
+        return Column(String, nullable=False, index=True)
 
     @classmethod
     async def record(cls, db: AsyncSession, installation_id: str, version: str, now: str) -> None:
@@ -155,9 +168,27 @@ class IOSUsageStatistics(Base):
 
     @classmethod
     async def list_version_counts(cls, db: AsyncSession):
-        """返回各 iOS 版本的去重安装数量。"""
+        """返回各版本的去重安装数量。"""
         count = func.count(cls.id)
         result = await db.execute(
             select(cls.version, count).group_by(cls.version).order_by(count.desc())
         )
         return result.all()
+
+
+class IOSUsageStatistics(_AppUsageStatisticsMixin, Base):
+    """按匿名 App 安装标识保存最新 iOS 版本，与后端实例数独立。"""
+
+    __tablename__ = "IOS_USAGE_STATISTICS"
+
+
+class AndroidUsageStatistics(_AppUsageStatisticsMixin, Base):
+    """按匿名 App 安装标识保存最新 Android 版本，与后端实例数独立。"""
+
+    __tablename__ = "ANDROID_USAGE_STATISTICS"
+
+
+class HarmonyUsageStatistics(_AppUsageStatisticsMixin, Base):
+    """按匿名 App 安装标识保存最新 HarmonyOS 版本，与后端实例数独立。"""
+
+    __tablename__ = "HARMONY_USAGE_STATISTICS"

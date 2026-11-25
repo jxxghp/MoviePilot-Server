@@ -7,8 +7,17 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.cache import cache_manager
 from app.models.base import Base
-from app.models.usage_statistic import IOSUsageStatistics, UsageStatistics
-from app.schemas.models import IOSUsageStatisticItem, UsageStatisticItem
+from app.models.usage_statistic import (
+    AndroidUsageStatistics,
+    HarmonyUsageStatistics,
+    IOSUsageStatistics,
+    UsageStatistics,
+)
+from app.schemas.models import (
+    AppUsageStatisticItem,
+    IOSUsageStatisticItem,
+    UsageStatisticItem,
+)
 from app.services.usage_statistic import UsageService
 
 
@@ -82,6 +91,8 @@ def test_statistics_response_does_not_include_unknown_users(monkeypatch) -> None
             AsyncMock(return_value=[("v2.0.0", 2)]),
         )
         monkeypatch.setattr(IOSUsageStatistics, "list_version_counts", AsyncMock(return_value=[("1.0.6", 3)]))
+        monkeypatch.setattr(AndroidUsageStatistics, "list_version_counts", AsyncMock(return_value=[("2.0.3", 5)]))
+        monkeypatch.setattr(HarmonyUsageStatistics, "list_version_counts", AsyncMock(return_value=[("2.0.3", 2)]))
         monkeypatch.setattr(UsageStatistics, "count_all", AsyncMock(return_value=2))
         monkeypatch.setattr(
             UsageStatistics,
@@ -95,6 +106,8 @@ def test_statistics_response_does_not_include_unknown_users(monkeypatch) -> None
         assert result["backend_versions"] == [{"version": "v2.0.0", "count": 2}]
         assert result["frontend_versions"] == [{"version": "v2.0.0", "count": 2}]
         assert result["ios_app_versions"] == [{"version": "1.0.6", "count": 3}]
+        assert result["android_app_versions"] == [{"version": "2.0.3", "count": 5}]
+        assert result["harmony_app_versions"] == [{"version": "2.0.3", "count": 2}]
         assert "other_users" not in result
         assert "reported_users" not in result
         cache_manager.usage_statistic_cache.clear()
@@ -183,12 +196,54 @@ def test_ios_installation_upgrade_is_independent_of_backend_counts() -> None:
 
 
 def test_ios_report_rejects_invalid_identity_and_version() -> None:
-    """iOS 公共上报边界拒绝非法标识、空版本及超长版本。"""
+    """移动端公共上报边界拒绝非法标识、空版本及超长版本。"""
     from uuid import UUID
     import pytest
     from pydantic import ValidationError
     for version in ["", " ", "x" * 65, "unknown"]:
         with pytest.raises(ValidationError):
             IOSUsageStatisticItem(installation_id=UUID(int=1), version=version)
+        with pytest.raises(ValidationError):
+            AppUsageStatisticItem(installation_id=UUID(int=1), version=version)
     with pytest.raises(ValidationError):
         IOSUsageStatisticItem(installation_id="invalid", version="1.0.6")
+    with pytest.raises(ValidationError):
+        AppUsageStatisticItem(installation_id="invalid", version="2.0.3")
+
+
+def test_android_and_harmony_installation_upgrade_are_isolated() -> None:
+    """Android 与 HarmonyOS 独立建表、去重、升级覆盖且与 iOS / 后端实例数互不影响。"""
+    async def run_scenario() -> None:
+        from uuid import UUID
+        from sqlalchemy import select
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            async with async_sessionmaker(engine)() as db:
+                for version in ["2.0.2", "2.0.2", "2.0.3"]:
+                    await UsageService.report_android_usage(
+                        db, AppUsageStatisticItem(installation_id=UUID(int=10), version=version)
+                    )
+                await UsageService.report_android_usage(
+                    db, AppUsageStatisticItem(installation_id=UUID(int=11), version="2.0.3")
+                )
+                for version in ["2.0.2", "2.0.3"]:
+                    await UsageService.report_harmony_usage(
+                        db, AppUsageStatisticItem(installation_id=UUID(int=10), version=version)
+                    )
+
+                assert await AndroidUsageStatistics.list_version_counts(db) == [("2.0.3", 2)]
+                assert await HarmonyUsageStatistics.list_version_counts(db) == [("2.0.3", 1)]
+                assert await IOSUsageStatistics.list_version_counts(db) == []
+                assert await UsageStatistics.count_all(db) == 0
+                android_rows = (await db.execute(select(AndroidUsageStatistics))).scalars().all()
+                harmony_rows = (await db.execute(select(HarmonyUsageStatistics))).scalars().all()
+                assert len(android_rows) == 2
+                assert len(harmony_rows) == 1
+        finally:
+            cache_manager.usage_statistic_cache.clear()
+            await engine.dispose()
+
+    asyncio.run(run_scenario())
