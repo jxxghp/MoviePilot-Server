@@ -11,6 +11,13 @@ describe('版本分布', () => {
       android: [{ version: '2.0.3', count: 48 }],
       harmony: [{ version: '2.0.3', count: 15 }],
     } })
+    await wrapper.get('[id$="trigger-app"]').trigger('mousedown', { button: 0, ctrlKey: false })
+    await wrapper.get('[id$="trigger-app"]').trigger('click')
+    expect(wrapper.text()).toContain('2.0.3')
+    expect(wrapper.text()).toContain('63')
+    expect(wrapper.text()).toContain('1.0.6')
+    expect(wrapper.text()).toContain('32')
+
     await wrapper.get('[id$="trigger-ios"]').trigger('mousedown', { button: 0, ctrlKey: false })
     await wrapper.get('[id$="trigger-ios"]').trigger('click')
     expect(wrapper.text()).toContain('1.0.6')

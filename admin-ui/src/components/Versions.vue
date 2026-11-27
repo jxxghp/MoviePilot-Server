@@ -3,11 +3,27 @@ import { computed, ref } from 'vue'
 import { number } from '@/api'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 interface Version { version: string; count: number }
-const props = defineProps<{ backend: Version[]; frontend: Version[]; ios?: Version[]; android?: Version[]; harmony?: Version[] }>()
+const props = defineProps<{ backend: Version[]; frontend: Version[]; app?: Version[]; ios?: Version[]; android?: Version[]; harmony?: Version[] }>()
 const selected = ref('backend')
+const mergedApp = computed(() => {
+  if (props.app !== undefined) return props.app
+  const counts = new Map<string, number>()
+  for (const group of [props.ios ?? [], props.android ?? [], props.harmony ?? []]) {
+    for (const row of group) {
+      if (!row?.count) continue
+      const key = String(row.version || '').trim().replace(/^v(?=\d)/i, '')
+      if (!key || key === 'unknown') continue
+      counts.set(key, (counts.get(key) ?? 0) + row.count)
+    }
+  }
+  return Array.from(counts.entries())
+    .map(([version, count]) => ({ version, count }))
+    .sort((a, b) => b.count - a.count || a.version.localeCompare(b.version))
+})
 const items = computed(() => {
   if (selected.value === 'backend') return props.backend
   if (selected.value === 'frontend') return props.frontend
+  if (selected.value === 'app') return mergedApp.value
   if (selected.value === 'ios') return props.ios ?? []
   if (selected.value === 'android') return props.android ?? []
   return props.harmony ?? []
@@ -17,7 +33,7 @@ const total = computed(() => items.value.reduce((sum, row) => sum + row.count, 0
 <template>
   <section>
     <h2 class="mb-6 text-xl font-semibold tracking-tight">版本分布</h2>
-    <Tabs v-model="selected"><TabsList class="flex-wrap h-auto"><TabsTrigger value="backend">后端版本</TabsTrigger><TabsTrigger value="frontend">前端版本</TabsTrigger><TabsTrigger value="ios">iOS App 版本</TabsTrigger><TabsTrigger value="android">Android App 版本</TabsTrigger><TabsTrigger value="harmony">HarmonyOS App 版本</TabsTrigger></TabsList></Tabs>
+    <Tabs v-model="selected"><TabsList class="flex-wrap h-auto"><TabsTrigger value="backend">后端版本</TabsTrigger><TabsTrigger value="frontend">前端版本</TabsTrigger><TabsTrigger value="app">APP 安装统计</TabsTrigger><TabsTrigger value="ios">iOS App 版本</TabsTrigger><TabsTrigger value="android">Android App 版本</TabsTrigger><TabsTrigger value="harmony">HarmonyOS App 版本</TabsTrigger></TabsList></Tabs>
     <div v-if="items.length" class="mt-7 max-h-96 space-y-6 overflow-y-auto pr-1">
       <div v-for="item in items" :key="item.version" class="grid grid-cols-[5rem_1fr_4.5rem] items-center gap-4 text-sm sm:grid-cols-[6rem_1fr_6rem]">
         <span class="truncate" :title="item.version">{{ item.version }}</span><div class="h-2.5 overflow-hidden rounded-full bg-muted" role="meter" :aria-label="item.version" :aria-valuenow="item.count" :aria-valuemin="0" :aria-valuemax="total"><div class="h-full rounded-full bg-primary" :style="{ width: `${total ? item.count / total * 100 : 0}%` }"></div></div><span class="text-right tabular-nums">{{ number(item.count) }}</span>

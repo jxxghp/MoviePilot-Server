@@ -103,8 +103,13 @@ def test_statistics_response_does_not_include_unknown_users(monkeypatch) -> None
         result = await UsageService.get_statistics(AsyncMock())
 
         assert result["total_users"] == 2
+        assert result["app_total_users"] == 10
         assert result["backend_versions"] == [{"version": "v2.0.0", "count": 2}]
         assert result["frontend_versions"] == [{"version": "v2.0.0", "count": 2}]
+        assert result["app_versions"] == [
+            {"version": "2.0.3", "count": 7},
+            {"version": "1.0.6", "count": 3},
+        ]
         assert result["ios_app_versions"] == [{"version": "1.0.6", "count": 3}]
         assert result["android_app_versions"] == [{"version": "2.0.3", "count": 5}]
         assert result["harmony_app_versions"] == [{"version": "2.0.3", "count": 2}]
@@ -242,6 +247,13 @@ def test_android_and_harmony_installation_upgrade_are_isolated() -> None:
                 harmony_rows = (await db.execute(select(HarmonyUsageStatistics))).scalars().all()
                 assert len(android_rows) == 2
                 assert len(harmony_rows) == 1
+                await UsageService.report_ios_usage(
+                    db, IOSUsageStatisticItem(installation_id=UUID(int=12), version="2.0.3")
+                )
+                cache_manager.usage_statistic_cache.clear()
+                stats = await UsageService.get_statistics(db)
+                assert stats["app_versions"] == [{"version": "2.0.3", "count": 4}]
+                assert stats["app_total_users"] == 4
         finally:
             cache_manager.usage_statistic_cache.clear()
             await engine.dispose()
